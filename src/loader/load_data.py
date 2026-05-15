@@ -343,6 +343,45 @@ def _print_summary(dataset: dict) -> None:
     print("[loader] ────────────────────────────────────────────\n")
 
 
+def load_subset(
+    provider_limit: int = 30,
+    non_fraud_sample: int = 20,
+    seed: int = RANDOM_SEED,
+) -> dict:
+    """
+    Load a small, graph-ready subset for fast development and testing.
+
+    All filtering happens in Python so the Jac graph builder only receives
+    the exact nodes it needs — no in-Jac iteration over the full dataset.
+
+    Returns the same dict schema as load_dataset() but pre-filtered to
+    `provider_limit` providers and their associated claims/patients/physicians.
+    """
+    full = load_dataset(non_fraud_sample=non_fraud_sample, seed=seed)
+
+    providers = full["providers"][:provider_limit]
+    prov_ids  = {p["id"] for p in providers}
+
+    claims    = [c for c in full["claims"]   if c["provider_id"] in prov_ids]
+    bene_ids  = {c["bene_id"] for c in claims}
+    patients  = [p for p in full["patients"] if p["id"] in bene_ids]
+    phys_ids  = {c["attending_physician"] for c in claims if c["attending_physician"]}
+    physicians = [{"id": pid} for pid in sorted(phys_ids)]
+
+    subset = {
+        "providers":  providers,
+        "patients":   patients,
+        "claims":     claims,
+        "physicians": physicians,
+    }
+
+    fraud_count = sum(1 for p in providers if p["fraud_label"])
+    print(f"[loader] Subset ready: {len(providers)} providers "
+          f"({fraud_count} fraud), {len(claims)} claims, "
+          f"{len(patients)} patients, {len(physicians)} physicians")
+    return subset
+
+
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
