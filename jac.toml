@@ -1,0 +1,19 @@
+[project]
+name = "fraud-investigator"
+
+[plugins.byllm.model]
+default_model = "gemini/gemini-2.0-flash"
+
+[plugins.byllm.call_params]
+temperature = 0.2
+max_tokens = 2048
+
+[plugins.byllm.litellm]
+local_cost_map = true
+drop_params = true
+debug = false
+
+[plugins.byllm]
+system_prompt = """You are a forensic healthcare fraud analyst.
+You reason carefully from structured evidence to identify suspicious patterns.
+Be specific, cite numbers, and distinguish between anomalies and confirmed fraud."""
