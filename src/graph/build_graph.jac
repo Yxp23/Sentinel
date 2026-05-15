@@ -8,8 +8,11 @@ Builds a development-subset graph:
   root --> Provider --> Claim --> Physician
            Patient  --> Claim
 
+Provider aggregate stats (total_claims, total_amount, etc.) are pre-computed
+in Python from ALL claims so they reflect true billing volumes even though
+the graph only holds up to 50 sampled claims per provider.
+
 Then runs GraphStats walker to verify traversal works.
-All filtering is done in Python (load_subset) — Jac only creates nodes.
 """
 
 # Add project root to sys.path so the Python loader is importable
@@ -18,7 +21,6 @@ import sys, os as _os
 _proj_root = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), '..', '..'))
 if _proj_root not in sys.path:
     sys.path.insert(0, _proj_root)
-# Jac walkers use recursive DFS; providers with 2k+ claims exceed the default limit
 sys.setrecursionlimit(10000)
 ::py::
 
@@ -67,8 +69,8 @@ walker GraphStats {
 
 with entry {
     # ── 1. Load pre-filtered data from Python ──────────────────────────────
-    # All subset selection stays in Python; Jac only creates nodes.
-    data = load_subset(provider_limit=5, non_fraud_sample=5);
+    # 30 providers, up to 50 sampled claims each; provider stats from all claims.
+    data = load_subset(provider_limit=30, non_fraud_sample=15);
 
     providers = data["providers"];
     patients  = data["patients"];
@@ -85,7 +87,16 @@ with entry {
         if not p["fraud_label"] {
             fl = "No";
         }
-        prov_node = Provider(id=p["id"], fraud_label=fl);
+        # Stats pre-computed in Python from ALL claims (not just the sampled graph claims)
+        tc = p.get("total_claims", 0) or 0;
+        ta = p.get("total_amount", 0.0) or 0.0;
+        ic = p.get("inpatient_count", 0) or 0;
+        oc = p.get("outpatient_count", 0) or 0;
+        prov_node = Provider(
+            id=p["id"], fraud_label=fl,
+            total_claims=tc, total_amount=ta,
+            inpatient_count=ic, outpatient_count=oc
+        );
         root ++> prov_node;
         prov_index[p["id"]] = prov_node;
     }
@@ -171,17 +182,8 @@ with entry {
             bene_id=c["bene_id"]
         );
 
-        # Provider --> Claim
+        # Provider --> Claim (stats already set from Python pre-computation)
         prov_node ++> claim_node;
-
-        # Aggregate stats on the Provider node (used by Billing Agent)
-        prov_node.total_claims += 1;
-        prov_node.total_amount += amt;
-        if c["type"] == "inpatient" {
-            prov_node.inpatient_count += 1;
-        } else {
-            prov_node.outpatient_count += 1;
-        }
 
         # Patient --> Claim
         bene_id = c["bene_id"];
@@ -211,7 +213,7 @@ with entry {
     print(f"  Providers visited : {stats.n_providers}");
     print(f"  Fraud providers   : {stats.n_fraud}");
     print(f"  Claims traversed  : {stats.n_claims}");
-    print(f"  Total amount      : ${stats.total_amount:,.0f}");
+    print(f"  Total amount (sampled) : ${stats.total_amount:,.0f}");
     print(f"  Reports collected : {len(stats.reports)}");
 
     fraud_reports = [];
@@ -223,7 +225,7 @@ with entry {
     if fraud_reports {
         fp = fraud_reports[0];
         print(f"\n  Sample fraud provider : {fp['provider']}");
-        print(f"    Claims on graph     : {fp['total_claims']}");
+        print(f"    Total claims (all)  : {fp['total_claims']}");
         print(f"    Total reimbursed    : ${fp['total_amount']:,.0f}");
     }
 

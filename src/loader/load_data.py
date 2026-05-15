@@ -137,16 +137,22 @@ def _codes(row: dict, cols: list[str]) -> list[str]:
 # Step 1 — Provider labels + sampling
 # ---------------------------------------------------------------------------
 
-def _load_providers(non_fraud_sample: int, seed: int) -> tuple[set[str], list[dict]]:
+def _load_providers(
+    non_fraud_sample: int,
+    seed: int,
+    fraud_sample: int | None = None,
+) -> tuple[set[str], list[dict]]:
     """
     Returns (selected_provider_ids, provider_dicts).
-    All fraud providers are included; non-fraud are randomly sampled.
+    fraud_sample caps how many fraud providers are included (None = all).
     """
     raw = _read_csv("labels")
     fraud_providers     = [r for r in raw if r["PotentialFraud"].strip() == "Yes"]
     non_fraud_providers = [r for r in raw if r["PotentialFraud"].strip() == "No"]
 
     rng = random.Random(seed)
+    if fraud_sample is not None:
+        fraud_providers = fraud_providers[:fraud_sample]  # deterministic first-N
     sampled_non_fraud = rng.sample(
         non_fraud_providers,
         min(non_fraud_sample, len(non_fraud_providers))
@@ -279,6 +285,7 @@ def _load_patients(bene_ids: set[str]) -> list[dict]:
 def load_dataset(
     non_fraud_sample: int = NON_FRAUD_SAMPLE,
     seed: int = RANDOM_SEED,
+    fraud_sample: int | None = None,
 ) -> dict:
     """
     Load and return the development subset of the fraud dataset.
@@ -287,7 +294,7 @@ def load_dataset(
       providers, patients, claims, physicians
     """
     print(f"[loader] Reading provider labels...")
-    provider_ids, providers = _load_providers(non_fraud_sample, seed)
+    provider_ids, providers = _load_providers(non_fraud_sample, seed, fraud_sample=fraud_sample)
     fraud_count     = sum(1 for p in providers if p["fraud_label"])
     non_fraud_count = len(providers) - fraud_count
     print(f"[loader]   {len(providers)} providers selected "
@@ -345,39 +352,76 @@ def _print_summary(dataset: dict) -> None:
 
 def load_subset(
     provider_limit: int = 30,
-    non_fraud_sample: int = 20,
+    non_fraud_sample: int = 15,
+    claims_per_provider: int = 50,
     seed: int = RANDOM_SEED,
 ) -> dict:
     """
     Load a small, graph-ready subset for fast development and testing.
 
-    All filtering happens in Python so the Jac graph builder only receives
-    the exact nodes it needs — no in-Jac iteration over the full dataset.
+    All filtering and aggregation happens in Python so the Jac graph builder
+    only creates nodes for a small representative sample of claims — keeping
+    edge counts low enough for Jac to build the graph in under 30 seconds.
 
-    Returns the same dict schema as load_dataset() but pre-filtered to
-    `provider_limit` providers and their associated claims/patients/physicians.
+    Provider aggregate stats (total_claims, total_amount, etc.) are computed
+    from ALL claims before sampling and stored in each provider dict so agents
+    see accurate billing volumes even though the graph holds only a sample.
+
+    Returns same schema as load_dataset() plus per-provider aggregates.
     """
-    full = load_dataset(non_fraud_sample=non_fraud_sample, seed=seed)
+    from collections import defaultdict
+
+    # Cap fraud providers so we don't scan claims for hundreds of unused providers
+    fraud_cap = max(provider_limit - non_fraud_sample, provider_limit // 2)
+    full = load_dataset(non_fraud_sample=non_fraud_sample, seed=seed, fraud_sample=fraud_cap)
 
     providers = full["providers"][:provider_limit]
     prov_ids  = {p["id"] for p in providers}
 
-    claims    = [c for c in full["claims"]   if c["provider_id"] in prov_ids]
-    bene_ids  = {c["bene_id"] for c in claims}
+    all_claims = [c for c in full["claims"] if c["provider_id"] in prov_ids]
+
+    # Pre-compute per-provider stats from ALL claims (Jac will only get a sample)
+    stats: dict[str, dict] = defaultdict(lambda: {
+        "total_claims": 0, "total_amount": 0.0,
+        "inpatient_count": 0, "outpatient_count": 0,
+    })
+    for c in all_claims:
+        pid = c["provider_id"]
+        stats[pid]["total_claims"] += 1
+        stats[pid]["total_amount"] += c["amount"] or 0.0
+        if c["type"] == "inpatient":
+            stats[pid]["inpatient_count"] += 1
+        else:
+            stats[pid]["outpatient_count"] += 1
+
+    for p in providers:
+        p.update(stats[p["id"]])
+
+    # Sample up to claims_per_provider claims per provider to limit graph edges
+    claims_by_prov: dict[str, list] = defaultdict(list)
+    for c in all_claims:
+        claims_by_prov[c["provider_id"]].append(c)
+
+    sampled_claims: list[dict] = []
+    for pid in prov_ids:
+        sampled_claims.extend(claims_by_prov[pid][:claims_per_provider])
+
+    bene_ids  = {c["bene_id"] for c in sampled_claims}
     patients  = [p for p in full["patients"] if p["id"] in bene_ids]
-    phys_ids  = {c["attending_physician"] for c in claims if c["attending_physician"]}
+    phys_ids  = {c["attending_physician"] for c in sampled_claims if c["attending_physician"]}
     physicians = [{"id": pid} for pid in sorted(phys_ids)]
 
     subset = {
         "providers":  providers,
         "patients":   patients,
-        "claims":     claims,
+        "claims":     sampled_claims,
         "physicians": physicians,
     }
 
     fraud_count = sum(1 for p in providers if p["fraud_label"])
     print(f"[loader] Subset ready: {len(providers)} providers "
-          f"({fraud_count} fraud), {len(claims)} claims, "
+          f"({fraud_count} fraud), {len(sampled_claims)} sampled claims "
+          f"(of {len(all_claims)} total), "
           f"{len(patients)} patients, {len(physicians)} physicians")
     return subset
 
