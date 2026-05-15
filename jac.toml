@@ -2,7 +2,7 @@
 name = "fraud-investigator"
 
 [plugins.byllm.model]
-default_model = "gemini/gemini-2.0-flash"
+default_model = "openai/gpt-4o-mini"
 
 [plugins.byllm.call_params]
 temperature = 0.2

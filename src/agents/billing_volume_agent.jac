@@ -113,7 +113,7 @@ walker BillingVolumeAgent {
                   f"label={here.fraud_label})...");
 
             ::py::
-            import time as _t; _t.sleep(5)
+            import time as _t; _t.sleep(2)
             ::py::
 
             assessment = assess_billing(
@@ -225,7 +225,7 @@ with entry {
     print(f"\n[billing] ── Results ─────────────────────────────────");
     high_risk = [];
     for f in agent.findings {
-        if f.risk_level == "HIGH" {
+        if f.risk_level.upper() in ["HIGH", "CONFIRMED FRAUD"] {
             high_risk.append(f);
         }
     }
