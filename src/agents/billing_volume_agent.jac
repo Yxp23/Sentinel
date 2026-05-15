@@ -62,7 +62,7 @@ walker BillingVolumeAgent {
         peer_avg_claims: float = 0.0,
         peer_avg_amount: float = 0.0,
         _prov_count: int = 0,
-        _total_claims_sum: float = 0.0,
+        _total_claims_sum: int = 0,
         _total_amount_sum: float = 0.0;
 
     can on_root with Root entry {
@@ -101,25 +101,37 @@ walker BillingVolumeAgent {
             avg_amt = here.total_amount / here.total_claims;
         }
 
-        print(f"[billing] Assessing {here.id} "
-              f"(claims={here.total_claims}, amount=${here.total_amount:,.0f}, "
-              f"label={here.fraud_label})...");
+        # Only assess providers that look anomalous relative to peer group
+        threshold_claims = self.peer_avg_claims * 1.5;
+        threshold_amount = self.peer_avg_amount * 1.5;
+        if here.total_claims <= threshold_claims and here.total_amount <= threshold_amount {
+            print(f"[billing] {here.id} skipped - within normal range "
+                  f"(claims={here.total_claims}, amount=${here.total_amount:,.0f})");
+        } else {
+            print(f"[billing] Assessing {here.id} "
+                  f"(claims={here.total_claims}, amount=${here.total_amount:,.0f}, "
+                  f"label={here.fraud_label})...");
 
-        assessment = assess_billing(
-            provider_id       = here.id,
-            total_claims      = here.total_claims,
-            total_amount      = here.total_amount,
-            inpatient_count   = here.inpatient_count,
-            outpatient_count  = here.outpatient_count,
-            avg_claim_amount  = avg_amt,
-            peer_avg_claims   = self.peer_avg_claims,
-            peer_avg_amount   = self.peer_avg_amount,
-            top_diagnosis_codes = top_diag,
-            fraud_label       = here.fraud_label,
-        );
+            ::py::
+            import time as _t; _t.sleep(5)
+            ::py::
 
-        self.findings.append(assessment);
-        report assessment;
+            assessment = assess_billing(
+                provider_id       = here.id,
+                total_claims      = here.total_claims,
+                total_amount      = here.total_amount,
+                inpatient_count   = here.inpatient_count,
+                outpatient_count  = here.outpatient_count,
+                avg_claim_amount  = avg_amt,
+                peer_avg_claims   = self.peer_avg_claims,
+                peer_avg_amount   = self.peer_avg_amount,
+                top_diagnosis_codes = top_diag,
+                fraud_label       = here.fraud_label,
+            );
+
+            self.findings.append(assessment);
+            report assessment;
+        }
     }
 }
 
