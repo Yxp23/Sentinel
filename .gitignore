@@ -1,0 +1,33 @@
+# Dataset — large CSVs, not committed
+data/
+
+# Generated case file output
+output/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Jac build artifacts
+__jac_gen__/
+*.jir
+
+# Environment / secrets
+.env
+*.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
