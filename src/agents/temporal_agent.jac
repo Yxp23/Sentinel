@@ -25,19 +25,22 @@ include src.agents.temporal_walker;
 import from src.loader.load_data { load_subset }
 
 # ---------------------------------------------------------------------------
-# Entry point
+# Entry point — minimal graph: Provider + Claim nodes only (no Patient/Physician)
 # ---------------------------------------------------------------------------
 
 with entry {
-    data = load_subset(provider_limit=30, non_fraud_sample=15);
+    ::py::
+    import time as _t0
+    _build_start = _t0.time()
+    ::py::
+
+    data = load_subset(provider_limit=200, non_fraud_sample=100, claims_per_provider=30);
 
     providers = data["providers"];
     patients  = data["patients"];
     claims    = data["claims"];
 
     prov_index: dict = {};
-    pat_index:  dict = {};
-    phys_index: dict = {};
 
     for p in providers {
         fl = "Yes";
@@ -53,26 +56,6 @@ with entry {
         );
         root ++> prov_node;
         prov_index[p["id"]] = prov_node;
-    }
-
-    for p in patients {
-        g = p["gender"];
-        gender_int = 0;
-        if g == "M" { gender_int = 1; } elif g == "F" { gender_int = 2; }
-        state_int = 0;
-        if p["state"] is not None { state_int = p["state"]; }
-        age_int = 0;
-        if p["age"] is not None { age_int = p["age"]; }
-        ip_amt = 0.0;
-        if p["ip_annual_reimbursed"] is not None { ip_amt = p["ip_annual_reimbursed"]; }
-        op_amt = 0.0;
-        if p["op_annual_reimbursed"] is not None { op_amt = p["op_annual_reimbursed"]; }
-        pat_node = Patient(
-            id=p["id"], gender=gender_int, state=state_int, age=age_int,
-            chronic_conditions=p["chronic_conditions"], deceased=p["deceased"],
-            ip_annual_reimbursed=ip_amt, op_annual_reimbursed=op_amt
-        );
-        pat_index[p["id"]] = pat_node;
     }
 
     for c in claims {
@@ -95,17 +78,13 @@ with entry {
             provider_id=pid, bene_id=c["bene_id"]
         );
         prov_node ++> claim_node;
-        bene_id = c["bene_id"];
-        pat_node = pat_index.get(bene_id);
-        if pat_node { pat_node ++> claim_node; }
-        phys_id = c["attending_physician"];
-        if phys_id {
-            if phys_id not in phys_index {
-                phys_index[phys_id] = Physician(id=phys_id);
-            }
-            claim_node ++> phys_index[phys_id];
-        }
     }
+
+    ::py::
+    _build_elapsed = _t0.time() - _build_start
+    print(f"[temporal] Graph built in {_build_elapsed:.1f}s  "
+          f"({len(providers)} providers, {len(claims)} sampled claims)")
+    ::py::
 
     deceased_map: dict = {};
     for p in patients {
@@ -115,6 +94,11 @@ with entry {
             "dod": dod_val
         };
     }
+
+    ::py::
+    _deceased_count = sum(1 for v in deceased_map.values() if v["deceased"])
+    print(f"[temporal] deceased_map: {len(deceased_map)} patients, {_deceased_count} deceased")
+    ::py::
 
     print("[temporal] Graph ready. Running Temporal Anomaly Agent...\n");
 
