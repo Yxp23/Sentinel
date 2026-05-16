@@ -1,0 +1,92 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0f0f1a;
+  --bg2: #13131f;
+  --grid: #1a1a2e;
+  --shadow-d: #05050e;
+  --shadow-l: #1c1c30;
+  --amber: #e8a838;
+  --amber-dim: #a07020;
+  --amber-glow: rgba(232,168,56,0.18);
+  --teal: #38b2ac;
+  --red: #e85d5d;
+  --text: #e8e8f0;
+  --muted: #8888aa;
+  --dim: #404058;
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'Inter', sans-serif;
+}
+
+html, body {
+  height: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  width: 100%;
+}
+
+/* Grid background pattern */
+.grid-bg {
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(rgba(26,26,46,0.8) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(26,26,46,0.8) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Neumorphic utility classes */
+.nm-raised {
+  background: var(--bg);
+  border-radius: 14px;
+  box-shadow: 7px 7px 18px var(--shadow-d), -5px -5px 14px var(--shadow-l);
+}
+.nm-raised-sm {
+  background: var(--bg);
+  border-radius: 10px;
+  box-shadow: 4px 4px 10px var(--shadow-d), -3px -3px 8px var(--shadow-l);
+}
+.nm-inset {
+  background: var(--bg);
+  border-radius: 12px;
+  box-shadow: inset 4px 4px 10px var(--shadow-d), inset -3px -3px 8px var(--shadow-l);
+}
+.nm-inset-sm {
+  background: var(--bg);
+  border-radius: 8px;
+  box-shadow: inset 3px 3px 7px var(--shadow-d), inset -2px -2px 5px var(--shadow-l);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: #252540; border-radius: 3px; }
+
+@keyframes pulseAmber {
+  0%, 100% { box-shadow: 7px 7px 18px var(--shadow-d), -5px -5px 14px var(--shadow-l), 0 0 24px rgba(232,168,56,0.2); }
+  50%       { box-shadow: 7px 7px 18px var(--shadow-d), -5px -5px 14px var(--shadow-l), 0 0 48px rgba(232,168,56,0.35), 0 0 80px rgba(232,168,56,0.1); }
+}
+@keyframes scanline {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes countUp {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}

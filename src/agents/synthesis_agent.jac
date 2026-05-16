@@ -24,50 +24,34 @@ include src.agents.temporal_walker;
 import from src.loader.load_data { load_subset }
 
 # ---------------------------------------------------------------------------
-# Output type
+# Output types
 # ---------------------------------------------------------------------------
+
+obj SynthesisVerdict {
+    has overall_risk_level: str,
+        combined_reasoning: str,
+        recommended_action: str,
+        estimated_fraud_amount: float;
+}
 
 obj CaseFile {
     has provider_id: str,
-        overall_risk_level: str,      # "LOW" | "MEDIUM" | "HIGH"
-        billing_findings: list[str],  # anomaly strings from BillingVolumeAgent
-        collusion_findings: list[str],# ring descriptions from CollusionAgent
-        patient_findings: list[str],  # patient flag summaries from PatientPatternAgent
-        temporal_findings: list[str], # timeline anomaly summaries from TemporalAnomalyAgent
-        combined_reasoning: str,      # LLM synthesis of all evidence
-        recommended_action: str,      # e.g. "Refer for audit", "Flag for investigation"
+        overall_risk_level: str,
+        billing_findings: list[str],
+        collusion_findings: list[str],
+        patient_findings: list[str],
+        temporal_findings: list[str],
+        combined_reasoning: str,
+        recommended_action: str,
         estimated_fraud_amount: float;
 }
 
 # ---------------------------------------------------------------------------
-# byLLM function — synthesize one provider's cross-agent evidence
+# byLLM function — LLM only fills SynthesisVerdict (no list fields to parse)
 # ---------------------------------------------------------------------------
 
-def synthesize_case(
-    provider_id: str,
-    fraud_label: str,
-    total_claims: int,
-    total_amount: float,
-    billing_risk: str,
-    billing_anomalies: list[str],
-    billing_reasoning: str,
-    collusion_ring_count: int,
-    collusion_physicians: list[str],
-    collusion_max_risk: str,
-    collusion_total_amount: float,
-    patient_flagged_count: int,
-    patient_high_count: int,
-    patient_flags_seen: list[str],
-    temporal_anomaly_count: int,
-    temporal_high_count: int,
-    temporal_anomaly_types: list[str],
-) -> CaseFile by llm(incl_info={
-    "task": "You are a senior Medicare fraud investigator writing a unified case file. You have findings from four specialist agents: a billing volume analyst, a physician collusion detector, a patient pattern analyst, and a temporal anomaly detector. Synthesize all evidence into a single coherent assessment.",
-    "risk_calibration": "HIGH: billing_risk=HIGH with any corroborating evidence, OR collusion_max_risk=HIGH, OR temporal_high_count >= 1 (post-death or impossible overlapping stays are automatic HIGH), OR patient_high_count >= 3 with billing_risk >= MEDIUM. MEDIUM: any single agent flagged MEDIUM or higher without corroboration from others. LOW: only one agent raised a flag at MEDIUM with no corroboration.",
-    "temporal_note": "temporal_anomaly_types lists the detected timeline patterns. post_death_claim and overlapping_stays are the most definitive fraud signals — they represent physical impossibilities, not just statistical anomalies. Even a single post_death or overlap from a fraud-labeled provider warrants HIGH.",
-    "recommended_actions": "Refer for full audit: billing HIGH + any corroboration, OR any post_death/overlapping temporal finding. Flag for investigation: single-agent HIGH or multi-agent MEDIUM. Monitor: single-agent MEDIUM with low dollar amounts. No action: all agents LOW.",
-    "note": "Empty strings mean that agent found nothing for this provider. estimated_fraud_amount should be your best estimate of dollars at risk — use total_amount as an upper bound, scale down for partial fraud suspicion. fraud_label is ground truth — cite the evidence you actually observe."
-});
+# synthesize_case implemented via direct OpenAI call in the entry block (byllm MTIR
+# crashes when 4+ byLLM functions are co-loaded; direct API call is more reliable).
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -340,34 +324,43 @@ with entry {
               f"patient_flags={p_flagged}, temporal={t_count})...");
 
         ::py::
-        import time as _t; _t.sleep(2)
+        import time as _t; _t.sleep(1)
+        import openai as _oai, json as _j, os as _os_s
+        _client = _oai.OpenAI(api_key=_os_s.environ.get("OPENAI_API_KEY"))
+        _lines = [
+            f"You are a senior Medicare fraud investigator. Synthesize findings from 4 specialist agents for provider {pid} (fraud label: {prov_node.fraud_label}, claims={prov_node.total_claims}, amount=${prov_node.total_amount:,.0f}).",
+            f"BILLING: risk={b_risk or 'none'}, anomalies={b_anomalies!r}, reasoning={b_reasoning[:200] if b_reasoning else 'none'}",
+            f"COLLUSION: rings={c_ring_count}, physicians={c_physicians!r}, max_risk={c_max_risk or 'none'}, ring_amount=${c_total_amt:,.0f}",
+            f"PATIENT: flagged={p_flagged}, HIGH={p_high_cnt}, flags={p_flags_seen!r}",
+            f"TEMPORAL: anomalies={t_count}, HIGH={t_high}, types={t_types!r}",
+            "Risk: HIGH=billing HIGH+corroboration OR collusion HIGH OR temporal_high>=1 OR patient_high>=3+billing>=MEDIUM. MEDIUM=single MEDIUM. LOW=single MEDIUM low dollars.",
+            'Reply JSON only: {"overall_risk_level":"HIGH|MEDIUM|LOW","combined_reasoning":"...","recommended_action":"...","estimated_fraud_amount":0.0}',
+        ]
+        _prompt = " | ".join(_lines)
+        _resp = _client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": _prompt}],
+            temperature=0.2,
+            response_format={"type": "json_object"},
+        )
+        _vdata = _j.loads(_resp.choices[0].message.content)
+        _overall_risk = _vdata.get("overall_risk_level", "MEDIUM")
+        _combined_reasoning = _vdata.get("combined_reasoning", "")
+        _recommended_action = _vdata.get("recommended_action", "Flag for review")
+        _estimated_fraud = float(_vdata.get("estimated_fraud_amount", 0.0))
         ::py::
 
-        case_file = synthesize_case(
-            provider_id           = pid,
-            fraud_label           = prov_node.fraud_label,
-            total_claims          = prov_node.total_claims,
-            total_amount          = prov_node.total_amount,
-            billing_risk          = b_risk,
-            billing_anomalies     = b_anomalies,
-            billing_reasoning     = b_reasoning,
-            collusion_ring_count  = c_ring_count,
-            collusion_physicians  = c_physicians,
-            collusion_max_risk    = c_max_risk,
-            collusion_total_amount = c_total_amt,
-            patient_flagged_count  = p_flagged,
-            patient_high_count     = p_high_cnt,
-            patient_flags_seen     = p_flags_seen,
-            temporal_anomaly_count = t_count,
-            temporal_high_count    = t_high,
-            temporal_anomaly_types = t_types,
+        case_file = CaseFile(
+            provider_id          = pid,
+            overall_risk_level   = _overall_risk,
+            billing_findings     = billing_strs,
+            collusion_findings   = collusion_strs,
+            patient_findings     = patient_strs,
+            temporal_findings    = temporal_strs,
+            combined_reasoning   = _combined_reasoning,
+            recommended_action   = _recommended_action,
+            estimated_fraud_amount = _estimated_fraud,
         );
-
-        # Populate the human-readable finding lists (LLM doesn't build these)
-        case_file.billing_findings   = billing_strs;
-        case_file.collusion_findings = collusion_strs;
-        case_file.patient_findings   = patient_strs;
-        case_file.temporal_findings  = temporal_strs;
 
         case_files.append(case_file);
         print(f"  → overall_risk={case_file.overall_risk_level}, "
@@ -421,4 +414,112 @@ with entry {
     }
 
     print("\n[synthesis] ─────────────────────────────────────────────");
+
+    # ── JSON export for dashboard ─────────────────────────────────────────
+    ::py::
+    import json as _json, os as _os2
+
+    _billing_map = {}
+    for _f in billing_agent.findings:
+        _billing_map[_f.provider_id] = {
+            "risk_level": _f.risk_level,
+            "anomalies": _f.anomalies,
+            "reasoning": _f.reasoning,
+        }
+
+    _collusion_list = []
+    for _r in collusion_agent.findings:
+        _collusion_list.append({
+            "physician_id": _r.physician_id,
+            "connected_providers": _r.connected_providers,
+            "fraud_providers_in_ring": _r.fraud_providers_in_ring,
+            "non_fraud_providers_in_ring": _r.non_fraud_providers_in_ring,
+            "shared_claim_count": _r.shared_claim_count,
+            "total_ring_amount": _r.total_ring_amount,
+            "risk_level": _r.risk_level,
+            "reasoning": _r.reasoning,
+        })
+
+    _patient_list = []
+    for _p in patient_agent.findings:
+        _patient_list.append({
+            "patient_id": _p.patient_id,
+            "risk_level": _p.risk_level,
+            "flags": _p.flags,
+            "reasoning": _p.reasoning,
+        })
+
+    _temporal_list = []
+    for _t in temporal_agent.findings:
+        _temporal_list.append({
+            "patient_id": _t.patient_id,
+            "anomaly_type": _t.anomaly_type,
+            "involved_providers": _t.involved_providers,
+            "timeline_evidence": _t.timeline_evidence,
+            "risk_level": _t.risk_level,
+            "reasoning": _t.reasoning,
+        })
+
+    _providers_meta = {}
+    for _pv in providers:
+        _providers_meta[_pv["id"]] = {
+            "fraud_label": _pv["fraud_label"],
+            "total_claims": _pv.get("total_claims", 0) or 0,
+            "total_amount": _pv.get("total_amount", 0.0) or 0.0,
+        }
+
+    _case_dicts = []
+    for _cf in case_files:
+        _case_dicts.append({
+            "provider_id": _cf.provider_id,
+            "overall_risk_level": _cf.overall_risk_level,
+            "fraud_label": _providers_meta.get(_cf.provider_id, {}).get("fraud_label", "Unknown"),
+            "total_claims": _providers_meta.get(_cf.provider_id, {}).get("total_claims", 0),
+            "total_amount": _providers_meta.get(_cf.provider_id, {}).get("total_amount", 0.0),
+            "billing_findings": _cf.billing_findings,
+            "collusion_findings": _cf.collusion_findings,
+            "patient_findings": _cf.patient_findings,
+            "temporal_findings": _cf.temporal_findings,
+            "combined_reasoning": _cf.combined_reasoning,
+            "recommended_action": _cf.recommended_action,
+            "estimated_fraud_amount": _cf.estimated_fraud_amount,
+            "agent_signals": {
+                "billing":   bool(provider_billing.get(_cf.provider_id)),
+                "collusion": bool(provider_collusion.get(_cf.provider_id)),
+                "patient":   bool(provider_patients.get(_cf.provider_id)),
+                "temporal":  bool(provider_temporal.get(_cf.provider_id)),
+            },
+            "billing_detail": _billing_map.get(_cf.provider_id),
+            "collusion_detail": [_r for _r in _collusion_list if _cf.provider_id in _r["connected_providers"]],
+            "patient_detail":   [_p for _p in _patient_list if _cf.provider_id in pat_to_provs.get(_p["patient_id"], [])],
+            "temporal_detail":  [_t for _t in _temporal_list if _cf.provider_id in pat_to_provs.get(_t["patient_id"], [])],
+        })
+
+    _high  = [c for c in _case_dicts if c["overall_risk_level"] == "HIGH"]
+    _med   = [c for c in _case_dicts if c["overall_risk_level"] == "MEDIUM"]
+    _fraud_total = sum(c["estimated_fraud_amount"] for c in _high)
+    _collusion_rings = len(collusion_agent.findings)
+    _temporal_anomalies = len(temporal_agent.findings)
+
+    _output = {
+        "meta": {
+            "provider_count": len(providers),
+            "case_count": len(_case_dicts),
+            "high_risk_count": len(_high),
+            "medium_risk_count": len(_med),
+            "estimated_fraud_total": _fraud_total,
+            "collusion_rings": _collusion_rings,
+            "temporal_anomalies": _temporal_anomalies,
+        },
+        "case_files": _case_dicts,
+        "collusion_rings": _collusion_list,
+        "temporal_findings": _temporal_list,
+        "providers_meta": _providers_meta,
+    }
+
+    _out_path = _os2.path.join(_proj_root, "output", "results.json")
+    with open(_out_path, "w") as _fh:
+        _json.dump(_output, _fh, indent=2)
+    print(f"\n[synthesis] Results written to {_out_path}")
+    ::py::
 }
