@@ -2,12 +2,15 @@
 Patient Pattern Agent — Step 4c.
 
 Detects suspicious patient-level patterns:
-  1. Multi-provider shopping — patient billed by 3+ different providers
-  2. High claim volume — patient has 10+ sampled claims
-  3. Post-death billing — deceased patient has claims dated after DOD
+  1. multi_provider     — patient billed by 3+ different providers
+  2. high_volume        — patient has 10+ sampled claims
+  3. post_death_claim   — deceased patient has claims dated after DOD
+  4. fraud_provider_overlap — 2+ of the billing providers are fraud-labeled
 
-Traverses root → Provider → Claim paths to build per-patient stats, then
-calls the LLM only on patients that trip at least one anomaly threshold.
+Flags are computed from hard data (not left to the LLM). The LLM only
+provides risk_level and reasoning given the pre-computed flags.
+Post-LLM corrections enforce consistency (e.g. post-death is always HIGH,
+low-amount high-volume is capped at MEDIUM).
 
 Run:
   jac run src/agents/patient_agent.jac
@@ -26,18 +29,24 @@ include src.graph.schema;
 import from src.loader.load_data { load_subset }
 
 # ---------------------------------------------------------------------------
-# Output type
+# Output types
 # ---------------------------------------------------------------------------
 
 obj PatientFinding {
     has patient_id: str,
         risk_level: str,         # "LOW" | "MEDIUM" | "HIGH"
-        flags: list[str],        # e.g. ["multi_provider", "post_death_claim"]
+        flags: list[str],        # computed from data, not LLM
+        reasoning: str;
+}
+
+# LLM only returns risk_level + reasoning — flags come from code
+obj PatientAssessment {
+    has risk_level: str,
         reasoning: str;
 }
 
 # ---------------------------------------------------------------------------
-# byLLM function
+# byLLM function — risk + reasoning only, flags already computed
 # ---------------------------------------------------------------------------
 
 def assess_patient(
@@ -46,14 +55,18 @@ def assess_patient(
     unique_providers: list[str],
     claim_count: int,
     total_amount: float,
+    avg_claim_amount: float,
     deceased: bool,
     has_post_death_claim: bool,
     dod: str,
     latest_claim_date: str,
     provider_fraud_labels: list[str],
-) -> PatientFinding by llm(incl_info={
-    "task": "You are a healthcare fraud investigator analyzing patient billing patterns. A patient has been flagged for anomalous activity. Examine the pattern and assess the risk. Consider: how many different providers billed for this patient (doctor shopping or identity theft), total claim volume, whether any claims appear after death (deceased flag fraud), and whether the billing providers are themselves flagged as fraudulent.",
-    "output_format": "Return a PatientFinding with risk_level ('LOW'/'MEDIUM'/'HIGH'), a flags list (choose from: 'multi_provider', 'high_volume', 'post_death_claim', 'fraud_provider_overlap'), and a reasoning string explaining your assessment step by step."
+    fraud_provider_count: int,
+    observed_flags: list[str],
+) -> PatientAssessment by llm(incl_info={
+    "task": "You are a healthcare fraud investigator. A patient has been flagged with one or more anomaly flags computed from billing data. Your job is to assess the risk level and explain your reasoning clearly, citing specific numbers.",
+    "risk_calibration": "HIGH: any post-death claim (automatic), OR 3+ fraud-labeled providers billing same patient with total_amount > $10,000, OR patient appears at 4+ different providers. MEDIUM: 2–3 fraud-labeled providers with total_amount $2,000–$10,000, OR high claim volume (10+) with fraud provider overlap, OR 3+ providers with mixed fraud labels. LOW: fraud_provider_overlap with only 2 providers and total_amount < $2,000 (high false-positive rate when 50% of providers carry fraud labels), OR borderline volume with low dollar amounts.",
+    "note": "observed_flags are facts derived from data — do not contradict them. Focus your reasoning on explaining the severity and what the pattern suggests in the context of Medicare fraud."
 });
 
 # ---------------------------------------------------------------------------
@@ -61,17 +74,16 @@ def assess_patient(
 # ---------------------------------------------------------------------------
 
 walker PatientPatternAgent {
-    has deceased_lookup: dict = {},    # bene_id -> {deceased: bool, dod: str}
-        provider_fraud: dict = {},     # provider_id -> fraud_label str
+    has deceased_lookup: dict = {},
+        provider_fraud: dict = {},
         findings: list[PatientFinding] = [];
 
     can on_root with Root entry {
         # Phase 1: walk root → Provider → Claim, building per-patient stats
-        # Using flat dicts to mirror collusion_agent pattern
-        pat_providers: dict = {};    # bene_id -> list[str]
-        pat_claim_counts: dict = {}; # bene_id -> int
-        pat_amounts: dict = {};      # bene_id -> float
-        pat_dates: dict = {};        # bene_id -> list[str]
+        pat_providers: dict = {};
+        pat_claim_counts: dict = {};
+        pat_amounts: dict = {};
+        pat_dates: dict = {};
 
         for prov in [-->] {
             self.provider_fraud[prov.id] = prov.fraud_label;
@@ -99,21 +111,33 @@ walker PatientPatternAgent {
 
         print(f"[patient] Collected stats for {len(pat_providers)} patients\n");
 
-        # Phase 2: flag anomalous patients and call LLM
+        # Phase 2: flag and assess anomalous patients
         assessed = 0;
         skipped = 0;
 
         for bene in pat_providers {
-            provider_list = pat_providers[bene];
-            claim_cnt     = pat_claim_counts[bene];
-            total_amt     = pat_amounts[bene];
-            dates         = pat_dates[bene];
+            provider_list  = pat_providers[bene];
+            claim_cnt      = pat_claim_counts[bene];
+            total_amt      = pat_amounts[bene];
+            dates          = pat_dates[bene];
+            prov_count     = len(provider_list);
+
+            # Fraud provider count
+            fraud_prov_count = 0;
+            fraud_labels = [];
+            for pid in provider_list {
+                lbl = self.provider_fraud.get(pid, "No");
+                fraud_labels.append(lbl);
+                if lbl == "Yes" {
+                    fraud_prov_count += 1;
+                }
+            }
 
             # Deceased / post-death check
-            deceased    = False;
-            dod_str     = "";
-            post_death  = False;
-            pat_info    = self.deceased_lookup.get(bene, {});
+            deceased   = False;
+            dod_str    = "";
+            post_death = False;
+            pat_info   = self.deceased_lookup.get(bene, {});
             if pat_info {
                 deceased = pat_info.get("deceased", False);
                 dod_str  = pat_info.get("dod", "") or "";
@@ -125,18 +149,30 @@ walker PatientPatternAgent {
                 }
             }
 
-            prov_count = len(provider_list);
+            # ── Compute flags from hard data ──────────────────────────────
+            computed_flags: list[str] = [];
+            if prov_count >= 3 {
+                computed_flags.append("multi_provider");
+            }
+            if claim_cnt >= 10 {
+                computed_flags.append("high_volume");
+            }
+            if post_death {
+                computed_flags.append("post_death_claim");
+            }
+            if fraud_prov_count >= 2 {
+                computed_flags.append("fraud_provider_overlap");
+            }
 
-            # Filter: only assess patients with at least one anomaly
-            if prov_count < 3 and claim_cnt < 10 and not post_death {
+            # Skip patients with no flags at all
+            if not computed_flags {
                 skipped += 1;
                 continue;
             }
 
-            # Collect fraud labels for the providers that billed this patient
-            fraud_labels = [];
-            for pid in provider_list {
-                fraud_labels.append(self.provider_fraud.get(pid, "Unknown"));
+            avg_claim_amt = 0.0;
+            if claim_cnt > 0 {
+                avg_claim_amt = total_amt / claim_cnt;
             }
 
             latest_date = "";
@@ -146,28 +182,52 @@ walker PatientPatternAgent {
 
             print(f"[patient] Assessing {bene} "
                   f"(providers={prov_count}, claims={claim_cnt}, "
-                  f"amount=${total_amt:,.0f}, deceased={deceased}, "
-                  f"post_death={post_death})...");
+                  f"amount=${total_amt:,.0f}, flags={computed_flags})...");
 
             ::py::
             import time as _t; _t.sleep(2)
             ::py::
 
-            finding = assess_patient(
+            llm_out = assess_patient(
                 patient_id           = bene,
                 provider_count       = prov_count,
                 unique_providers     = provider_list,
                 claim_count          = claim_cnt,
                 total_amount         = total_amt,
+                avg_claim_amount     = avg_claim_amt,
                 deceased             = deceased,
                 has_post_death_claim = post_death,
                 dod                  = dod_str,
                 latest_claim_date    = latest_date,
                 provider_fraud_labels = fraud_labels,
+                fraud_provider_count = fraud_prov_count,
+                observed_flags       = computed_flags,
+            );
+
+            # ── Post-LLM risk correction ──────────────────────────────────
+            final_risk = llm_out.risk_level;
+            if post_death {
+                # Post-death billing is always HIGH regardless of amount
+                final_risk = "HIGH";
+            } elif final_risk == "HIGH" and total_amt < 2000.0 {
+                # Low dollar amounts (< $2K) don't justify HIGH — could be coincidence
+                # especially in a dataset where 50% of providers are fraud-labeled
+                final_risk = "MEDIUM";
+            } elif final_risk == "HIGH" and prov_count == 2 and fraud_prov_count == 2 and total_amt < 10000.0 {
+                # Exactly 2 fraud providers with moderate amounts: needs more evidence for HIGH
+                final_risk = "MEDIUM";
+            }
+
+            finding = PatientFinding(
+                patient_id = bene,
+                risk_level = final_risk,
+                flags      = computed_flags,
+                reasoning  = llm_out.reasoning,
             );
 
             self.findings.append(finding);
             assessed += 1;
+            report finding;
 
             print(f"  → risk={finding.risk_level}, flags={finding.flags}\n");
         }
@@ -259,7 +319,7 @@ with entry {
         }
     }
 
-    # Build deceased lookup from Python patient data so the walker can check DOD
+    # Build deceased lookup so the walker can check DOD without backward traversal
     deceased_map: dict = {};
     for p in patients {
         dod_val = p.get("dod", None) or "";
@@ -271,27 +331,23 @@ with entry {
 
     print("[patient] Graph ready. Running Patient Pattern Agent...\n");
 
-    agent = root spawn PatientPatternAgent(
-        deceased_lookup=deceased_map
-    );
+    agent = root spawn PatientPatternAgent(deceased_lookup=deceased_map);
 
     print(f"\n[patient] ── Results ──────────────────────────────────");
-    high_risk = [];
+    high_risk  = [];
+    med_risk   = [];
     for f in agent.findings {
-        if f.risk_level == "HIGH" {
-            high_risk.append(f);
-        }
+        if f.risk_level == "HIGH"   { high_risk.append(f); }
+        elif f.risk_level == "MEDIUM" { med_risk.append(f); }
     }
     print(f"  Total patients assessed : {len(agent.findings)}");
-    print(f"  HIGH risk findings      : {len(high_risk)}");
+    print(f"  HIGH risk               : {len(high_risk)}");
+    print(f"  MEDIUM risk             : {len(med_risk)}");
 
-    if high_risk {
-        print(f"\n  HIGH RISK patients:");
-        for f in high_risk {
-            print(f"    {f.patient_id}");
-            print(f"      Flags     : {f.flags}");
-            print(f"      Reasoning : {f.reasoning[:200]}...");
-        }
+    for f in agent.findings {
+        print(f"\n  [{f.risk_level}] {f.patient_id}");
+        print(f"    Flags     : {f.flags}");
+        print(f"    Reasoning : {f.reasoning[:250]}...");
     }
-    print("[patient] ────────────────────────────────────────────");
+    print("\n[patient] ────────────────────────────────────────────");
 }
