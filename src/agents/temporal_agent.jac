@@ -1,15 +1,15 @@
 """
-Billing Volume Agent — Step 4.
+Temporal Anomaly Agent — Step 4d.
 
-Detects providers with anomalous billing patterns: unusually high claim counts,
-reimbursement amounts, length-of-stay, or inpatient/outpatient ratio relative
-to the peer group.
-
-Produces a structured FraudAssessment per provider, including risk level,
-observed anomalies, and a reasoning chain the LLM can explain.
+Detects fraud patterns invisible to billing/collusion/patient agents by
+examining WHEN claims happened, not how much they cost:
+  1. overlapping_stays  — patient in two hospitals at once (impossible)
+  2. claim_burst        — 5+ claims in 7-day window (batch fabrication)
+  3. patient_shuttling  — same-day discharge→admission between providers 2+x
+  4. post_death_claim   — claims filed after recorded death date
 
 Run:
-  jac run src/agents/billing_volume_agent.jac
+  jac run src/agents/temporal_agent.jac
 """
 
 ::py::
@@ -20,7 +20,7 @@ if _proj_root not in sys.path:
 sys.setrecursionlimit(10000)
 ::py::
 
-include src.agents.billing_walker;
+include src.agents.temporal_walker;
 
 import from src.loader.load_data { load_subset }
 
@@ -107,27 +107,36 @@ with entry {
         }
     }
 
-    print("[billing] Graph ready. Running Billing Volume Agent...\n");
+    deceased_map: dict = {};
+    for p in patients {
+        dod_val = p.get("dod", None) or "";
+        deceased_map[p["id"]] = {
+            "deceased": p["deceased"],
+            "dod": dod_val
+        };
+    }
 
-    agent = root spawn BillingVolumeAgent();
+    print("[temporal] Graph ready. Running Temporal Anomaly Agent...\n");
 
-    print(f"\n[billing] ── Results ─────────────────────────────────");
+    agent = root spawn TemporalAnomalyAgent(deceased_lookup=deceased_map);
+
+    print(f"\n[temporal] ── Results ──────────────────────────────────");
     high_risk = [];
+    med_risk  = [];
     for f in agent.findings {
-        if f.risk_level.upper() in ["HIGH", "CONFIRMED FRAUD"] {
-            high_risk.append(f);
-        }
+        if f.risk_level == "HIGH"   { high_risk.append(f); }
+        elif f.risk_level == "MEDIUM" { med_risk.append(f); }
     }
-    print(f"  Total providers assessed : {len(agent.findings)}");
-    print(f"  HIGH risk findings       : {len(high_risk)}");
+    print(f"  Total patients assessed : {len(agent.findings)}");
+    print(f"  HIGH risk               : {len(high_risk)}");
+    print(f"  MEDIUM risk             : {len(med_risk)}");
 
-    if high_risk {
-        print(f"\n  HIGH RISK providers:");
-        for f in high_risk {
-            print(f"    {f.provider_id}");
-            print(f"      Anomalies : {f.anomalies}");
-            print(f"      Reasoning : {f.reasoning[:200]}...");
-        }
+    for f in agent.findings {
+        print(f"\n  [{f.risk_level}] {f.patient_id}");
+        print(f"    Type      : {f.anomaly_type}");
+        print(f"    Providers : {f.involved_providers}");
+        print(f"    Evidence  : {f.timeline_evidence[:200]}");
+        print(f"    Reasoning : {f.reasoning[:200]}...");
     }
-    print("[billing] ────────────────────────────────────────────");
+    print("\n[temporal] ────────────────────────────────────────────");
 }

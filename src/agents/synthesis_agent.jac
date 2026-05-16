@@ -16,12 +16,12 @@ if _proj_root not in sys.path:
 sys.setrecursionlimit(10000)
 ::py::
 
-include src.graph.schema;
+include src.agents.billing_walker;
+include src.agents.collusion_walker;
+include src.agents.patient_walker;
+include src.agents.temporal_walker;
 
 import from src.loader.load_data { load_subset }
-import from src.agents.billing_volume_agent { BillingVolumeAgent, FraudAssessment }
-import from src.agents.collusion_agent { CollusionAgent, CollusionRing }
-import from src.agents.patient_agent { PatientPatternAgent, PatientFinding }
 
 # ---------------------------------------------------------------------------
 # Output type
@@ -33,6 +33,7 @@ obj CaseFile {
         billing_findings: list[str],  # anomaly strings from BillingVolumeAgent
         collusion_findings: list[str],# ring descriptions from CollusionAgent
         patient_findings: list[str],  # patient flag summaries from PatientPatternAgent
+        temporal_findings: list[str], # timeline anomaly summaries from TemporalAnomalyAgent
         combined_reasoning: str,      # LLM synthesis of all evidence
         recommended_action: str,      # e.g. "Refer for audit", "Flag for investigation"
         estimated_fraud_amount: float;
@@ -57,11 +58,15 @@ def synthesize_case(
     patient_flagged_count: int,
     patient_high_count: int,
     patient_flags_seen: list[str],
+    temporal_anomaly_count: int,
+    temporal_high_count: int,
+    temporal_anomaly_types: list[str],
 ) -> CaseFile by llm(incl_info={
-    "task": "You are a senior Medicare fraud investigator writing a unified case file. You have findings from three specialist agents: a billing volume analyst, a physician collusion detector, and a patient pattern analyst. Synthesize all evidence into a single coherent assessment.",
-    "risk_calibration": "HIGH: billing_risk=HIGH with any corroborating collusion or patient evidence, OR collusion_max_risk=HIGH regardless of billing, OR patient_high_count >= 3 with billing_risk >= MEDIUM. MEDIUM: any single agent flagged MEDIUM or higher without strong corroboration from others. LOW: only one agent raised a flag and it is MEDIUM with no corroboration.",
-    "recommended_actions": "Refer for full audit: billing HIGH + any corroboration. Flag for investigation: single-agent HIGH or multi-agent MEDIUM. Monitor: single-agent MEDIUM with low dollar amounts. No action: all agents LOW.",
-    "note": "billing_risk, collusion_max_risk may be empty string if that agent found nothing for this provider. estimated_fraud_amount should be your best estimate of dollars at risk — use total_amount as an upper bound, scale down for partial fraud suspicion. fraud_label is ground truth — use it to calibrate but cite the evidence you actually observe."
+    "task": "You are a senior Medicare fraud investigator writing a unified case file. You have findings from four specialist agents: a billing volume analyst, a physician collusion detector, a patient pattern analyst, and a temporal anomaly detector. Synthesize all evidence into a single coherent assessment.",
+    "risk_calibration": "HIGH: billing_risk=HIGH with any corroborating evidence, OR collusion_max_risk=HIGH, OR temporal_high_count >= 1 (post-death or impossible overlapping stays are automatic HIGH), OR patient_high_count >= 3 with billing_risk >= MEDIUM. MEDIUM: any single agent flagged MEDIUM or higher without corroboration from others. LOW: only one agent raised a flag at MEDIUM with no corroboration.",
+    "temporal_note": "temporal_anomaly_types lists the detected timeline patterns. post_death_claim and overlapping_stays are the most definitive fraud signals — they represent physical impossibilities, not just statistical anomalies. Even a single post_death or overlap from a fraud-labeled provider warrants HIGH.",
+    "recommended_actions": "Refer for full audit: billing HIGH + any corroboration, OR any post_death/overlapping temporal finding. Flag for investigation: single-agent HIGH or multi-agent MEDIUM. Monitor: single-agent MEDIUM with low dollar amounts. No action: all agents LOW.",
+    "note": "Empty strings mean that agent found nothing for this provider. estimated_fraud_amount should be your best estimate of dollars at risk — use total_amount as an upper bound, scale down for partial fraud suspicion. fraud_label is ground truth — cite the evidence you actually observe."
 });
 
 # ---------------------------------------------------------------------------
@@ -172,15 +177,17 @@ with entry {
 
     print("[synthesis] Graph ready. Running all agents...\n");
 
-    # ── Run all three agents ──────────────────────────────────────────────
+    # ── Run all four agents ───────────────────────────────────────────────
     billing_agent   = root spawn BillingVolumeAgent();
     collusion_agent = root spawn CollusionAgent();
     patient_agent   = root spawn PatientPatternAgent(deceased_lookup=deceased_map);
+    temporal_agent  = root spawn TemporalAnomalyAgent(deceased_lookup=deceased_map);
 
     print(f"\n[synthesis] Agent results:");
     print(f"  Billing   : {len(billing_agent.findings)} provider findings");
     print(f"  Collusion : {len(collusion_agent.findings)} ring findings");
-    print(f"  Patient   : {len(patient_agent.findings)} patient findings\n");
+    print(f"  Patient   : {len(patient_agent.findings)} patient findings");
+    print(f"  Temporal  : {len(temporal_agent.findings)} patient findings\n");
 
     # ── Index billing findings by provider_id ────────────────────────────
     provider_billing: dict = {};
@@ -211,6 +218,18 @@ with entry {
         }
     }
 
+    # ── Index temporal findings by provider_id via pat_to_provs ──────────
+    provider_temporal: dict = {};
+    for tf in temporal_agent.findings {
+        prov_list = pat_to_provs.get(tf.patient_id, []);
+        for pid in prov_list {
+            if pid not in provider_temporal {
+                provider_temporal[pid] = [];
+            }
+            provider_temporal[pid].append(tf);
+        }
+    }
+
     # ── Collect all flagged providers ────────────────────────────────────
     all_flagged: list[str] = [];
     for pid in provider_billing {
@@ -220,6 +239,9 @@ with entry {
         if pid not in all_flagged { all_flagged.append(pid); }
     }
     for pid in provider_patients {
+        if pid not in all_flagged { all_flagged.append(pid); }
+    }
+    for pid in provider_temporal {
         if pid not in all_flagged { all_flagged.append(pid); }
     }
 
@@ -276,6 +298,16 @@ with entry {
             }
         }
 
+        # Temporal evidence
+        temp_findings = provider_temporal.get(pid, []);
+        t_count   = len(temp_findings);
+        t_high    = 0;
+        t_types: list[str] = [];
+        for tf in temp_findings {
+            if tf.risk_level == "HIGH" { t_high += 1; }
+            if tf.anomaly_type not in t_types { t_types.append(tf.anomaly_type); }
+        }
+
         # Assemble human-readable finding lists
         billing_strs: list[str] = [];
         if b_risk {
@@ -295,36 +327,47 @@ with entry {
                 f"patient={pf.patient_id}, risk={pf.risk_level}, flags={pf.flags}"
             );
         }
+        temporal_strs: list[str] = [];
+        for tf in temp_findings {
+            temporal_strs.append(
+                f"patient={tf.patient_id}, type={tf.anomaly_type}, "
+                f"risk={tf.risk_level}, evidence={tf.timeline_evidence[:120]}"
+            );
+        }
 
         print(f"[synthesis] Synthesizing {pid} "
               f"(billing={b_risk or 'none'}, collusion_rings={c_ring_count}, "
-              f"patient_flags={p_flagged})...");
+              f"patient_flags={p_flagged}, temporal={t_count})...");
 
         ::py::
         import time as _t; _t.sleep(2)
         ::py::
 
         case_file = synthesize_case(
-            provider_id          = pid,
-            fraud_label          = prov_node.fraud_label,
-            total_claims         = prov_node.total_claims,
-            total_amount         = prov_node.total_amount,
-            billing_risk         = b_risk,
-            billing_anomalies    = b_anomalies,
-            billing_reasoning    = b_reasoning,
-            collusion_ring_count = c_ring_count,
-            collusion_physicians = c_physicians,
-            collusion_max_risk   = c_max_risk,
+            provider_id           = pid,
+            fraud_label           = prov_node.fraud_label,
+            total_claims          = prov_node.total_claims,
+            total_amount          = prov_node.total_amount,
+            billing_risk          = b_risk,
+            billing_anomalies     = b_anomalies,
+            billing_reasoning     = b_reasoning,
+            collusion_ring_count  = c_ring_count,
+            collusion_physicians  = c_physicians,
+            collusion_max_risk    = c_max_risk,
             collusion_total_amount = c_total_amt,
             patient_flagged_count  = p_flagged,
             patient_high_count     = p_high_cnt,
             patient_flags_seen     = p_flags_seen,
+            temporal_anomaly_count = t_count,
+            temporal_high_count    = t_high,
+            temporal_anomaly_types = t_types,
         );
 
         # Populate the human-readable finding lists (LLM doesn't build these)
         case_file.billing_findings   = billing_strs;
         case_file.collusion_findings = collusion_strs;
         case_file.patient_findings   = patient_strs;
+        case_file.temporal_findings  = temporal_strs;
 
         case_files.append(case_file);
         print(f"  → overall_risk={case_file.overall_risk_level}, "
@@ -362,6 +405,7 @@ with entry {
             print(f"    Billing     : {cf.billing_findings}");
             print(f"    Collusion   : {cf.collusion_findings}");
             print(f"    Patients    : {len(cf.patient_findings)} flagged");
+            print(f"    Temporal    : {len(cf.temporal_findings)} anomalies");
             print(f"    Action      : {cf.recommended_action}");
             print(f"    Est. Fraud  : ${cf.estimated_fraud_amount:,.0f}");
             print(f"    Reasoning   : {cf.combined_reasoning[:300]}...");
