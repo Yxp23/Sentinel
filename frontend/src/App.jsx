@@ -43,7 +43,8 @@ export default function App() {
         <DataInputScreen
           key="dataInput"
           data={data}
-          onBegin={() => setScreen('analysis')}
+          onBack={() => setScreen('landing')}
+          onBegin={(newData) => { if (newData) setData(newData); setScreen('analysis') }}
         />
       )}
       {screen === 'analysis' && (
