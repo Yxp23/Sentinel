@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def run_synthesis():
-    print("Running Sentinel synthesis agent (this takes ~3-5 minutes)...")
+    print("Running Sentinel synthesis agent (200 providers — this takes ~10-20 minutes)...")
     result = subprocess.run(
         ["jac", "run", "src/agents/synthesis_agent.jac"],
         cwd=ROOT,

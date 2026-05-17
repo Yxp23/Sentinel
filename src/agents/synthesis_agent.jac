@@ -58,7 +58,7 @@ obj CaseFile {
 # ---------------------------------------------------------------------------
 
 with entry {
-    data = load_subset(provider_limit=30, non_fraud_sample=15);
+    data = load_subset(provider_limit=200, non_fraud_sample=100, claims_per_provider=30);
 
     providers = data["providers"];
     patients  = data["patients"];
