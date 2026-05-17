@@ -26,11 +26,40 @@ def assess_billing(
     top_diagnosis_codes: list[str],
     sampled_claim_count: int,
     fraud_label: str,
-) -> FraudAssessment by llm(incl_info={
-    "task": "You are a forensic Medicare fraud analyst. Assess whether this provider's billing pattern is anomalous. claims_ratio and amount_ratio are this provider's metrics divided by the peer-group average — a ratio of 1.0 is exactly average. top_diagnosis_codes are from a sample of claims only (see sampled_claim_count); total_claims and total_amount cover all claims.",
-    "risk_calibration": "HIGH: claims_ratio or amount_ratio > 3.0, especially combined with a narrow set of repeated diagnosis codes suggesting upcoding or phantom billing. MEDIUM: ratio 1.5–3.0, pattern warrants scrutiny but could have legitimate explanation (e.g. specialist practice). LOW: ratio just above 1.5 threshold with diverse diagnosis codes and plausible billing mix.",
-    "note": "fraud_label is the ground-truth label from the training dataset — use it only to cross-check your reasoning, not as a substitute for it. Explain anomalies you actually observe in the numbers."
-});
+) -> FraudAssessment {
+    _risk:      str       = "LOW";
+    _anomalies: list[str] = [];
+    _reasoning: str       = "";
+    ::py::
+    if claims_ratio > 3.0:
+        _anomalies.append(f"Very high claims ratio ({claims_ratio:.3f}) vs peer average (1.0) — possible phantom billing")
+    elif claims_ratio > 1.5:
+        _anomalies.append(f"High claims ratio ({claims_ratio:.3f}) compared to peer average (1.0)")
+    if amount_ratio > 3.0:
+        _anomalies.append(f"Very high amount ratio ({amount_ratio:.3f}) vs peer average (1.0) — possible upcoding")
+    elif amount_ratio > 1.5:
+        _anomalies.append(f"High amount ratio ({amount_ratio:.3f}) compared to peer average (1.0)")
+    _unique = list(dict.fromkeys(top_diagnosis_codes))
+    if len(_unique) <= 3 and (claims_ratio > 1.5 or amount_ratio > 1.5):
+        _anomalies.append(f"Narrow set of diagnosis codes (top codes include {', '.join(_unique[:4])}) suggesting potential upcoding")
+    if claims_ratio > 3.0 or amount_ratio > 3.0:
+        _risk = "HIGH"
+    elif claims_ratio > 1.5 or amount_ratio > 1.5:
+        _risk = "MEDIUM"
+    _reasoning = (
+        f"Provider {provider_id} billed {total_claims} claims totalling ${total_amount:,.0f} "
+        f"(claims_ratio={claims_ratio:.3f}x, amount_ratio={amount_ratio:.3f}x peer average, "
+        f"avg ${avg_claim_amount:,.0f}/claim). "
+        + (("Anomalies: " + "; ".join(_anomalies) + ".") if _anomalies else "No significant billing anomalies detected.")
+    )
+    ::py::
+    return FraudAssessment(
+        provider_id=provider_id,
+        risk_level=_risk,
+        anomalies=_anomalies,
+        reasoning=_reasoning
+    );
+}
 
 walker BillingVolumeAgent {
     has findings: list[FraudAssessment] = [],
@@ -96,10 +125,6 @@ walker BillingVolumeAgent {
                   f"(claims={here.total_claims} [{claims_ratio:.1f}x], "
                   f"amount=${here.total_amount:,.0f} [{amount_ratio:.1f}x], "
                   f"label={here.fraud_label})...");
-
-            ::py::
-            import time as _t; _t.sleep(2)
-            ::py::
 
             assessment = assess_billing(
                 provider_id         = here.id,

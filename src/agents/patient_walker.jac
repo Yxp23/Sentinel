@@ -31,11 +31,45 @@ def assess_patient(
     provider_fraud_labels: list[str],
     fraud_provider_count: int,
     observed_flags: list[str],
-) -> PatientAssessment by llm(incl_info={
-    "task": "You are a healthcare fraud investigator. A patient has been flagged with one or more anomaly flags computed from billing data. Your job is to assess the risk level and explain your reasoning clearly, citing specific numbers.",
-    "risk_calibration": "HIGH: any post-death claim (automatic), OR 3+ fraud-labeled providers billing same patient with total_amount > $10,000, OR patient appears at 4+ different providers. MEDIUM: 2–3 fraud-labeled providers with total_amount $2,000–$10,000, OR high claim volume (10+) with fraud provider overlap, OR 3+ providers with mixed fraud labels. LOW: fraud_provider_overlap with only 2 providers and total_amount < $2,000 (high false-positive rate when 50% of providers carry fraud labels), OR borderline volume with low dollar amounts.",
-    "note": "observed_flags are facts derived from data — do not contradict them. Focus your reasoning on explaining the severity and what the pattern suggests in the context of Medicare fraud."
-});
+) -> PatientAssessment {
+    _risk:      str = "LOW";
+    _reasoning: str = "";
+    ::py::
+    _flags_txt = ", ".join(observed_flags) if observed_flags else "none"
+    if has_post_death_claim:
+        _risk = "HIGH"
+        _reasoning = (
+            f"Patient {patient_id} has post-death claims (DOD: {dod}, latest claim: {latest_claim_date}). "
+            "Billing after recorded death is definitive fraud."
+        )
+    elif fraud_provider_count >= 3 and total_amount > 10000:
+        _risk = "HIGH"
+        _reasoning = (
+            f"Patient {patient_id} billed by {fraud_provider_count} fraud-labeled providers "
+            f"(${total_amount:,.0f} total). Flags: {_flags_txt}."
+        )
+    elif provider_count >= 4:
+        _risk = "HIGH"
+        _reasoning = (
+            f"Patient {patient_id} appears at {provider_count} different providers "
+            f"(${total_amount:,.0f} total, {claim_count} claims). Flags: {_flags_txt}."
+        )
+    elif (fraud_provider_count >= 2 and 2000 <= total_amount <= 10000) or \
+         (claim_count >= 10 and fraud_provider_count >= 1) or (provider_count >= 3):
+        _risk = "MEDIUM"
+        _reasoning = (
+            f"Patient {patient_id}: {fraud_provider_count} fraud provider(s) out of {provider_count} total, "
+            f"${total_amount:,.0f} billed, {claim_count} claims. Flags: {_flags_txt}."
+        )
+    else:
+        _risk = "LOW"
+        _reasoning = (
+            f"Patient {patient_id}: limited fraud overlap ({fraud_provider_count} fraud providers), "
+            f"${total_amount:,.0f} total. Borderline flags: {_flags_txt}."
+        )
+    ::py::
+    return PatientAssessment(risk_level=_risk, reasoning=_reasoning);
+}
 
 walker PatientPatternAgent {
     has deceased_lookup: dict = {},
@@ -141,10 +175,6 @@ walker PatientPatternAgent {
             print(f"[patient] Assessing {bene} "
                   f"(providers={prov_count}, claims={claim_cnt}, "
                   f"amount=${total_amt:,.0f}, flags={computed_flags})...");
-
-            ::py::
-            import time as _t; _t.sleep(2)
-            ::py::
 
             llm_out = assess_patient(
                 patient_id           = bene,

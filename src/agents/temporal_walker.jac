@@ -29,17 +29,55 @@ def assess_temporal(
     deceased: bool,
     dod: str,
     total_claims: int,
-) -> TemporalFinding by llm(incl_info={
-    "task": "You are a Medicare fraud investigator analyzing temporal patterns in billing data. You have detected one or more date-based anomalies for a patient. Assess the overall risk level and explain the fraud implications clearly, citing the specific dates from timeline_evidence.",
-    "anomaly_types": {
-        "post_death_claim": "Claims filed after the patient's recorded death date — definitive fraud. Someone is billing Medicare for a dead person.",
-        "overlapping_stays": "Patient supposedly admitted to two different hospitals at the same time — at least one claim must be fabricated since a person cannot be in two places at once.",
-        "patient_shuttling": "Patient repeatedly discharged from one provider and immediately admitted to another on the same day — providers billing in coordinated rotation for the same patient.",
-        "claim_burst": "A provider submitted 5+ claims for this patient within a single 7-day window — consistent with batch fabrication of claims rather than genuine medical care."
-    },
-    "risk_calibration": "HIGH: any post_death_claim (automatic), OR overlapping_stays involving fraud-labeled providers, OR patient_shuttling between 2+ fraud-labeled providers. MEDIUM: overlapping_stays with non-fraud providers (data error possible but suspicious), OR patient_shuttling with at least one fraud provider, OR claim_burst from a fraud-labeled provider. LOW: claim_burst from a non-fraud provider only (could be legitimate catch-up billing or batch submission).",
-    "note": "provider_fraud_labels lists Yes/No for each involved provider in the same order as involved_providers. anomaly_types lists all detected patterns — address each one in your reasoning. Post-death billing is always HIGH regardless of dollar amount."
-});
+) -> TemporalFinding {
+    _risk:    str = "LOW";
+    _primary: str = "";
+    _reasoning: str = "";
+    ::py::
+    _fpc = sum(1 for lbl in provider_fraud_labels if lbl == "Yes")
+    _primary = anomaly_types[0] if anomaly_types else "unknown"
+    if "post_death_claim" in anomaly_types:
+        _risk = "HIGH"
+        _reasoning = (
+            f"Post-death billing detected for patient {patient_id} (DOD: {dod}). "
+            f"Claims filed after recorded death — definitive fraud. Evidence: {timeline_evidence}"
+        )
+    elif "overlapping_stays" in anomaly_types and _fpc >= 1:
+        _risk = "HIGH"
+        _reasoning = (
+            f"Overlapping inpatient stays involving {_fpc} fraud-labeled provider(s). "
+            f"At least one claim must be fabricated. Evidence: {timeline_evidence}"
+        )
+    elif "patient_shuttling" in anomaly_types and _fpc >= 2:
+        _risk = "HIGH"
+        _reasoning = (
+            f"Patient shuttling between {_fpc} fraud-labeled providers. "
+            f"Coordinated rotation billing pattern. Evidence: {timeline_evidence}"
+        )
+    elif ("overlapping_stays" in anomaly_types) or \
+         ("patient_shuttling" in anomaly_types and _fpc >= 1) or \
+         ("claim_burst" in anomaly_types and _fpc >= 1):
+        _risk = "MEDIUM"
+        _reasoning = (
+            f"Temporal anomaly ({', '.join(anomaly_types)}) involving {_fpc} fraud provider(s). "
+            f"Evidence: {timeline_evidence}"
+        )
+    else:
+        _risk = "LOW"
+        _reasoning = (
+            f"Minor temporal anomaly ({', '.join(anomaly_types)}) involving non-fraud providers. "
+            f"Evidence: {timeline_evidence}"
+        )
+    ::py::
+    return TemporalFinding(
+        patient_id=patient_id,
+        anomaly_type=_primary,
+        involved_providers=involved_providers,
+        timeline_evidence=timeline_evidence,
+        risk_level=_risk,
+        reasoning=_reasoning
+    );
+}
 
 walker TemporalAnomalyAgent {
     has deceased_lookup: dict = {},
@@ -204,10 +242,6 @@ walker TemporalAnomalyAgent {
             }
 
             print(f"[temporal] {bene}: types={_atypes}, providers={_iprovs_list}");
-
-            ::py::
-            import time as _t; _t.sleep(2)
-            ::py::
 
             finding = assess_temporal(
                 patient_id           = bene,

@@ -42,13 +42,13 @@ app.post('/api/upload', upload.array('files'), (req, res) => {
   const fileCount = req.files?.length || 0
   send('stage', { id: 'uploaded', message: `${fileCount} file${fileCount !== 1 ? 's' : ''} received — starting agents` })
 
-  // Timed stage events so the UI always progresses regardless of synthesis outcome
+  // Timed stage fallbacks so UI always progresses (real stdout triggers these too)
   const STAGE_SCHEDULE = [
-    { delay:  4000, id: 'billing',   message: 'Billing Agent: scanning claims anomalies...' },
-    { delay: 18000, id: 'collusion', message: 'Collusion Agent: mapping provider networks...' },
-    { delay: 35000, id: 'patient',   message: 'Patient Agent: analyzing patient patterns...' },
-    { delay: 52000, id: 'temporal',  message: 'Temporal Agent: detecting time sequences...' },
-    { delay: 68000, id: 'synthesis', message: 'Synthesis Agent: building case files...' },
+    { delay:  1500, id: 'billing',   message: 'Billing Agent: scanning claims anomalies...' },
+    { delay:  4000, id: 'collusion', message: 'Collusion Agent: mapping provider networks...' },
+    { delay:  6000, id: 'patient',   message: 'Patient Agent: analyzing patient patterns...' },
+    { delay:  8000, id: 'temporal',  message: 'Temporal Agent: detecting time sequences...' },
+    { delay: 10000, id: 'synthesis', message: 'Synthesis Agent: building case files...' },
   ]
   const timers = STAGE_SCHEDULE.map(s => setTimeout(() => send('stage', { id: s.id, message: s.message }), s.delay))
 
@@ -87,8 +87,10 @@ app.post('/api/upload', upload.array('files'), (req, res) => {
     res.end()
   }
 
-  // Run synthesis; fall back to pre-computed results.json if it fails
-  const proc = spawn('python3', ['-u', 'src/api/export_results.py'], {
+  const uploadDir = path.join(ROOT, 'data', 'uploads')
+
+  // Run synthesis on the actual uploaded files
+  const proc = spawn('python3', ['-u', 'src/api/export_results.py', '--upload_dir', uploadDir], {
     cwd: ROOT,
     env: { ...process.env, PYTHONUNBUFFERED: '1' },
   })
@@ -97,8 +99,8 @@ app.post('/api/upload', upload.array('files'), (req, res) => {
   proc.stderr.on('data', (chunk) => parseOutput(chunk.toString()))
   proc.on('close', finish)
 
-  // Hard timeout: after 90s (just past last timed stage), use whatever results.json we have
-  const hardTimeout = setTimeout(() => { proc.kill(); finish(-1) }, 90000)
+  // Hard timeout: 45s safety net
+  const hardTimeout = setTimeout(() => { proc.kill(); finish(-1) }, 45000)
   proc.on('close', () => clearTimeout(hardTimeout))
 
   req.on('close', () => { proc.kill(); timers.forEach(t => clearTimeout(t)); clearTimeout(hardTimeout) })

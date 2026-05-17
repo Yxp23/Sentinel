@@ -324,30 +324,76 @@ with entry {
               f"patient_flags={p_flagged}, temporal={t_count})...");
 
         ::py::
-        import time as _t; _t.sleep(1)
-        import openai as _oai, json as _j, os as _os_s
-        _client = _oai.OpenAI(api_key=_os_s.environ.get("OPENAI_API_KEY"))
-        _lines = [
-            f"You are a senior Medicare fraud investigator. Synthesize findings from 4 specialist agents for provider {pid} (fraud label: {prov_node.fraud_label}, claims={prov_node.total_claims}, amount=${prov_node.total_amount:,.0f}).",
-            f"BILLING: risk={b_risk or 'none'}, anomalies={b_anomalies!r}, reasoning={b_reasoning[:200] if b_reasoning else 'none'}",
-            f"COLLUSION: rings={c_ring_count}, physicians={c_physicians!r}, max_risk={c_max_risk or 'none'}, ring_amount=${c_total_amt:,.0f}",
-            f"PATIENT: flagged={p_flagged}, HIGH={p_high_cnt}, flags={p_flags_seen!r}",
-            f"TEMPORAL: anomalies={t_count}, HIGH={t_high}, types={t_types!r}",
-            "Risk: HIGH=billing HIGH+corroboration OR collusion HIGH OR temporal_high>=1 OR patient_high>=3+billing>=MEDIUM. MEDIUM=single MEDIUM. LOW=single MEDIUM low dollars.",
-            'Reply JSON only: {"overall_risk_level":"HIGH|MEDIUM|LOW","combined_reasoning":"...","recommended_action":"...","estimated_fraud_amount":0.0}',
-        ]
-        _prompt = " | ".join(_lines)
-        _resp = _client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": _prompt}],
-            temperature=0.2,
-            response_format={"type": "json_object"},
-        )
-        _vdata = _j.loads(_resp.choices[0].message.content)
-        _overall_risk = _vdata.get("overall_risk_level", "MEDIUM")
-        _combined_reasoning = _vdata.get("combined_reasoning", "")
-        _recommended_action = _vdata.get("recommended_action", "Flag for review")
-        _estimated_fraud = float(_vdata.get("estimated_fraud_amount", 0.0))
+        # ── Rule-based synthesis (no LLM required) ──────────────────────
+        # Risk rules (same logic as the original LLM prompt):
+        #   HIGH: billing HIGH + any corroboration, OR collusion HIGH,
+        #         OR temporal HIGH >= 1, OR patient HIGH >= 3 + billing >= MEDIUM
+        #   MEDIUM: any single MEDIUM signal
+        #   LOW: everything else
+        _billing_high   = b_risk == "HIGH"
+        _billing_medium = b_risk in ("HIGH", "MEDIUM")
+        _corroborated   = c_ring_count > 0 or p_flagged > 0 or t_count > 0
+        _collusion_high = c_max_risk == "HIGH"
+        _temporal_high  = t_high >= 1
+        _patient_storm  = p_high_cnt >= 3 and _billing_medium
+
+        if (_billing_high and _corroborated) or _collusion_high or _temporal_high or _patient_storm:
+            _overall_risk = "HIGH"
+        elif _billing_medium or c_ring_count > 0 or p_flagged > 0 or t_count > 0:
+            _overall_risk = "MEDIUM"
+        else:
+            _overall_risk = "LOW"
+
+        # Estimated fraud: total billed amount for HIGH, 30 % for MEDIUM
+        if _overall_risk == "HIGH":
+            _estimated_fraud = float(prov_node.total_amount)
+        elif _overall_risk == "MEDIUM":
+            _estimated_fraud = float(prov_node.total_amount) * 0.3
+        else:
+            _estimated_fraud = 0.0
+
+        # Rule-based reasoning narrative
+        _parts = []
+        if b_risk:
+            _anom_txt = (", ".join(b_anomalies[:2]) if b_anomalies else "none detected")
+            _parts.append(f"Billing analysis shows {b_risk} risk: {_anom_txt}")
+        if c_ring_count > 0:
+            _phys_txt = ", ".join(c_physicians[:3])
+            _parts.append(
+                f"Collusion network: {c_ring_count} ring(s) via physician(s) {_phys_txt}, "
+                f"${c_total_amt:,.0f} flowing through ring (risk={c_max_risk})"
+            )
+        if p_flagged > 0:
+            _flag_txt = ", ".join(list(p_flags_seen)[:3])
+            _parts.append(
+                f"Patient patterns: {p_flagged} flagged ({p_high_cnt} HIGH risk); "
+                f"flags include {_flag_txt}"
+            )
+        if t_count > 0:
+            _type_txt = ", ".join(t_types[:3])
+            _parts.append(
+                f"Temporal anomalies: {t_count} found ({t_high} HIGH risk); "
+                f"types: {_type_txt}"
+            )
+        if not _parts:
+            _parts.append("No significant anomalies detected across all four specialist agents.")
+        _combined_reasoning = ". ".join(_parts) + f". Provider billed {prov_node.total_claims} claims totalling ${prov_node.total_amount:,.0f}."
+
+        # Action based on risk level
+        if _overall_risk == "HIGH":
+            _recommended_action = (
+                f"Initiate immediate audit of provider {pid}. "
+                + ("Investigate collusion ring and shared physician network. " if c_ring_count > 0 else "")
+                + ("Review billing volume anomalies against peer benchmarks. " if b_risk else "")
+                + "Refer to CMS Office of Inspector General for further investigation."
+            )
+        elif _overall_risk == "MEDIUM":
+            _recommended_action = (
+                f"Flag provider {pid} for enhanced monitoring. "
+                "Review claims from the past 12 months and cross-reference patient and physician patterns."
+            )
+        else:
+            _recommended_action = "Continue routine monitoring. No immediate action required."
         ::py::
 
         case_file = CaseFile(

@@ -59,10 +59,11 @@ export default function IntroScreen({ onDone }) {
             style={{
               position: 'absolute',
               fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif',
-              fontWeight: 200,
-              fontSize: 'clamp(3.5rem, 10vw, 7rem)',
+              fontWeight: 400,
+              fontSize: '6.5rem',
               color: '#fff',
-              letterSpacing: '-0.04em',
+              letterSpacing: '-0.02em',
+              lineHeight: 1.1,
               userSelect: 'none',
             }}
           >

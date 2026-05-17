@@ -35,6 +35,43 @@ FILES = {
     "outpatient":  "Train_Outpatientdata-1542865627584.csv",
 }
 
+# ---------------------------------------------------------------------------
+# Uploaded file detection
+# ---------------------------------------------------------------------------
+
+def detect_uploaded_files(upload_dir: str) -> dict | None:
+    """
+    Scan upload_dir for CSV files and identify which is labels/beneficiary/
+    inpatient/outpatient by inspecting column headers.  Returns a FILES-style
+    dict, or None if any required file type is missing.
+    """
+    found: dict[str, str] = {}
+    try:
+        csvs = [f for f in os.listdir(upload_dir) if f.lower().endswith(".csv")]
+    except FileNotFoundError:
+        return None
+
+    for fname in csvs:
+        path = os.path.join(upload_dir, fname)
+        try:
+            with open(path, newline="", encoding="utf-8") as fh:
+                headers = set(next(csv.reader(fh)))
+        except (StopIteration, OSError):
+            continue
+
+        if "PotentialFraud" in headers:
+            found["labels"] = path
+        elif "DOB" in headers and "ClaimID" not in headers:
+            found["beneficiary"] = path
+        elif "AdmissionDt" in headers:
+            found["inpatient"] = path
+        elif "ClaimID" in headers and "AdmissionDt" not in headers:
+            found["outpatient"] = path
+
+    if all(k in found for k in ("labels", "beneficiary", "inpatient", "outpatient")):
+        return found
+    return None
+
 # Chronic condition column names → human-readable label
 CHRONIC_COLS = {
     "ChronicCond_Alzheimer":          "Alzheimer",
@@ -60,13 +97,15 @@ NON_FRAUD_SAMPLE = 500
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _path(key: str) -> str:
+def _path(key: str, file_map: dict | None = None) -> str:
+    if file_map and key in file_map:
+        return file_map[key]
     return os.path.join(DATA_DIR, FILES[key])
 
 
-def _read_csv(key: str) -> list[dict]:
+def _read_csv(key: str, file_map: dict | None = None) -> list[dict]:
     rows = []
-    with open(_path(key), newline="", encoding="utf-8") as fh:
+    with open(_path(key, file_map), newline="", encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
             rows.append(row)
     return rows
@@ -141,12 +180,13 @@ def _load_providers(
     non_fraud_sample: int,
     seed: int,
     fraud_sample: int | None = None,
+    file_map: dict | None = None,
 ) -> tuple[set[str], list[dict]]:
     """
     Returns (selected_provider_ids, provider_dicts).
     fraud_sample caps how many fraud providers are included (None = all).
     """
-    raw = _read_csv("labels")
+    raw = _read_csv("labels", file_map)
     fraud_providers     = [r for r in raw if r["PotentialFraud"].strip() == "Yes"]
     non_fraud_providers = [r for r in raw if r["PotentialFraud"].strip() == "No"]
 
@@ -173,7 +213,7 @@ def _load_providers(
 # Step 2 — Claims (inpatient + outpatient), filtered to selected providers
 # ---------------------------------------------------------------------------
 
-def _load_claims(provider_ids: set[str]) -> tuple[list[dict], set[str], set[str]]:
+def _load_claims(provider_ids: set[str], file_map: dict | None = None) -> tuple[list[dict], set[str], set[str]]:
     """
     Returns (claim_dicts, bene_ids_seen, physician_ids_seen).
     """
@@ -182,7 +222,7 @@ def _load_claims(provider_ids: set[str]) -> tuple[list[dict], set[str], set[str]
     physician_ids: set[str] = set()
 
     for claim_type, key in [("inpatient", "inpatient"), ("outpatient", "outpatient")]:
-        for row in _read_csv(key):
+        for row in _read_csv(key, file_map):
             pid = row.get("Provider", "").strip()
             if pid not in provider_ids:
                 continue
@@ -238,9 +278,9 @@ def _load_claims(provider_ids: set[str]) -> tuple[list[dict], set[str], set[str]
 # Step 3 — Patients (beneficiaries), filtered to seen bene_ids
 # ---------------------------------------------------------------------------
 
-def _load_patients(bene_ids: set[str]) -> list[dict]:
+def _load_patients(bene_ids: set[str], file_map: dict | None = None) -> list[dict]:
     patients = []
-    for row in _read_csv("beneficiary"):
+    for row in _read_csv("beneficiary", file_map):
         bene_id = row.get("BeneID", "").strip()
         if bene_id not in bene_ids:
             continue
@@ -286,6 +326,7 @@ def load_dataset(
     non_fraud_sample: int = NON_FRAUD_SAMPLE,
     seed: int = RANDOM_SEED,
     fraud_sample: int | None = None,
+    file_map: dict | None = None,
 ) -> dict:
     """
     Load and return the development subset of the fraud dataset.
@@ -294,14 +335,14 @@ def load_dataset(
       providers, patients, claims, physicians
     """
     print(f"[loader] Reading provider labels...")
-    provider_ids, providers = _load_providers(non_fraud_sample, seed, fraud_sample=fraud_sample)
+    provider_ids, providers = _load_providers(non_fraud_sample, seed, fraud_sample=fraud_sample, file_map=file_map)
     fraud_count     = sum(1 for p in providers if p["fraud_label"])
     non_fraud_count = len(providers) - fraud_count
     print(f"[loader]   {len(providers)} providers selected "
           f"({fraud_count} fraud, {non_fraud_count} non-fraud)")
 
     print(f"[loader] Filtering claims to selected providers...")
-    claims, bene_ids, physician_ids = _load_claims(provider_ids)
+    claims, bene_ids, physician_ids = _load_claims(provider_ids, file_map=file_map)
     inpatient_count  = sum(1 for c in claims if c["type"] == "inpatient")
     outpatient_count = sum(1 for c in claims if c["type"] == "outpatient")
     print(f"[loader]   {len(claims)} claims "
@@ -310,7 +351,7 @@ def load_dataset(
           f"{len(physician_ids)} unique physicians")
 
     print(f"[loader] Loading patient demographics...")
-    patients = _load_patients(bene_ids)
+    patients = _load_patients(bene_ids, file_map=file_map)
     print(f"[loader]   {len(patients)} patient records loaded")
 
     physicians = [{"id": pid} for pid in sorted(physician_ids)]
@@ -355,6 +396,7 @@ def load_subset(
     non_fraud_sample: int = 15,
     claims_per_provider: int = 50,
     seed: int = RANDOM_SEED,
+    file_map: dict | None = None,
 ) -> dict:
     """
     Load a small, graph-ready subset for fast development and testing.
@@ -371,9 +413,20 @@ def load_subset(
     """
     from collections import defaultdict
 
+    # Auto-detect uploaded files from JAC_DATA_DIR env var if file_map not given
+    if file_map is None:
+        upload_dir = os.environ.get("JAC_DATA_DIR", "")
+        if upload_dir:
+            detected = detect_uploaded_files(upload_dir)
+            if detected:
+                print(f"[loader] Using uploaded files from {upload_dir}")
+                file_map = detected
+            else:
+                print(f"[loader] WARNING: uploaded files in {upload_dir} incomplete — using default data")
+
     # Cap fraud providers so we don't scan claims for hundreds of unused providers
     fraud_cap = max(provider_limit - non_fraud_sample, provider_limit // 2)
-    full = load_dataset(non_fraud_sample=non_fraud_sample, seed=seed, fraud_sample=fraud_cap)
+    full = load_dataset(non_fraud_sample=non_fraud_sample, seed=seed, fraud_sample=fraud_cap, file_map=file_map)
 
     providers = full["providers"][:provider_limit]
     prov_ids  = {p["id"] for p in providers}

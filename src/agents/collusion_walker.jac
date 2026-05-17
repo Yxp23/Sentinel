@@ -24,11 +24,37 @@ def assess_collusion(
     shared_claim_count: int,
     total_ring_amount: float,
     provider_details: list[dict]
-) -> CollusionRing by llm(incl_info={
-    "task": "You are a healthcare fraud investigator analyzing potential provider collusion rings. A physician appears on claims from multiple providers. Examine the pattern and determine if this looks like a coordinated fraud ring. Consider: how many providers share this physician, what fraction are fraud-labeled, what is the total money flowing through this physician, and whether the pattern suggests kickbacks or coordinated billing.",
-    "risk_calibration": "HIGH: 3+ providers share this physician AND the majority (>50%) are fraud-labeled AND total_ring_amount > $50,000. MEDIUM: 2+ fraud-labeled providers share physician, OR total_ring_amount > $20,000 with at least one fraud provider. LOW: physician shared between providers but mostly non-fraud-labeled or very low dollar amounts — could be a legitimate group practice.",
-    "note": "fraud_providers_in_ring and non_fraud_providers_in_ring are ground-truth labels. A ring with all non-fraud providers is unlikely to be collusion — be appropriately skeptical. Cite the specific dollar amounts and provider counts in your reasoning."
-});
+) -> CollusionRing {
+    _risk:      str = "LOW";
+    _reasoning: str = "";
+    ::py::
+    _fc = len(fraud_providers_in_ring)
+    _tc = len(connected_providers)
+    _ff = _fc / _tc if _tc > 0 else 0.0
+    if _tc >= 3 and _ff > 0.5 and total_ring_amount > 50000:
+        _risk = "HIGH"
+    elif _fc >= 2 or (total_ring_amount > 20000 and _fc >= 1):
+        _risk = "MEDIUM"
+    _reasoning = (
+        f"Physician {physician_id} appears on claims from {_tc} provider(s) "
+        f"({_fc} fraud-labeled, {len(non_fraud_providers_in_ring)} non-fraud). "
+        f"Total ring amount: ${total_ring_amount:,.0f}, shared claim count: {shared_claim_count}. "
+        + (f"Fraud fraction {_ff:.0%} and high dollar flow indicate coordinated billing." if _risk == "HIGH"
+           else "Partial fraud overlap warrants monitoring." if _risk == "MEDIUM"
+           else "Pattern consistent with legitimate group practice.")
+    )
+    ::py::
+    return CollusionRing(
+        physician_id=physician_id,
+        connected_providers=connected_providers,
+        fraud_providers_in_ring=fraud_providers_in_ring,
+        non_fraud_providers_in_ring=non_fraud_providers_in_ring,
+        shared_claim_count=shared_claim_count,
+        total_ring_amount=total_ring_amount,
+        risk_level=_risk,
+        reasoning=_reasoning
+    );
+}
 
 walker CollusionAgent {
     has phys_to_providers: dict = {},
@@ -97,10 +123,6 @@ walker CollusionAgent {
                       f"(shared by {len(providers_list)} providers, "
                       f"{len(fraud_provs)} fraud, "
                       f"${total_amount:,.0f} total)...");
-
-                ::py::
-                import time as _t; _t.sleep(2)
-                ::py::
 
                 ring = assess_collusion(
                     physician_id=phys_id,
