@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import GraphBackground from './GraphBackground'
 import InvestigationGraph from './InvestigationGraph'
@@ -144,6 +144,17 @@ function generateInvestigationSteps(cf) {
 
 export default function InvestigationView({ data, provider: cf, onBack }) {
   const [activeStep] = useState(5)
+  const billingRef = useRef(null)
+  const collusionRef = useRef(null)
+  const patientRef = useRef(null)
+  const temporalRef = useRef(null)
+  const synthesisRef = useRef(null)
+
+  const scrollToAgent = (agentId) => {
+    const refs = { billing: billingRef, collusion: collusionRef, patient: patientRef, temporal: temporalRef, synthesis: synthesisRef }
+    refs[agentId]?.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   if (!cf) return null
 
   const bil = cf.billing_detail
@@ -197,13 +208,14 @@ export default function InvestigationView({ data, provider: cf, onBack }) {
           <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, fontWeight: 700, letterSpacing: '0.2em', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 14 }}>
             Evidence Graph — scroll to zoom · drag to pan · hover to highlight
           </div>
-          <InvestigationGraph cf={cf} />
+          <InvestigationGraph cf={cf} onAgentClick={scrollToAgent} />
         </div>
 
         {/* Agent sections */}
         <div style={{ padding: '32px 40px 0', maxWidth: 960, display: 'flex', flexDirection: 'column', gap: 18 }}>
 
           {/* Agent 1: Billing */}
+          <div ref={billingRef} style={{ scrollMarginTop: 20 }} />
           <AgentSection icon="📊" agentNum={1} name="Billing Analysis" sub="Volume & amount anomaly detection against peer cohort" borderColor="var(--amber)" delay={0.1}>
             {bil ? (
               <>
@@ -225,6 +237,7 @@ export default function InvestigationView({ data, provider: cf, onBack }) {
           </AgentSection>
 
           {/* Agent 2: Collusion */}
+          <div ref={collusionRef} style={{ scrollMarginTop: 20 }} />
           <AgentSection icon="🕸️" agentNum={2} name="Collusion Network" sub="Physician-linked fraud ring detection across provider cohort" borderColor="var(--red)" delay={0.5}>
             {rings.length > 0 ? (
               <>
@@ -247,6 +260,7 @@ export default function InvestigationView({ data, provider: cf, onBack }) {
           </AgentSection>
 
           {/* Agent 3: Patient */}
+          <div ref={patientRef} style={{ scrollMarginTop: 20 }} />
           <AgentSection icon="🏥" agentNum={3} name="Patient Patterns" sub="Multi-provider & high-volume beneficiary anomalies" borderColor="var(--teal)" delay={0.9}>
             {pats.length > 0 ? (
               <>
@@ -271,6 +285,7 @@ export default function InvestigationView({ data, provider: cf, onBack }) {
           </AgentSection>
 
           {/* Agent 4: Temporal */}
+          <div ref={temporalRef} style={{ scrollMarginTop: 20 }} />
           <AgentSection icon="⏱️" agentNum={4} name="Temporal Analysis" sub="Impossible timelines & post-death billing detection" borderColor="#b080e0" delay={1.3}>
             {temps.length > 0 ? (
               <>
@@ -288,6 +303,7 @@ export default function InvestigationView({ data, provider: cf, onBack }) {
           </AgentSection>
 
           {/* Agent 5: Synthesis */}
+          <div ref={synthesisRef} style={{ scrollMarginTop: 20 }} />
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

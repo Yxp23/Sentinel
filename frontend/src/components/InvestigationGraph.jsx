@@ -88,10 +88,12 @@ function NodeCard({ node: n, hovered, onClick, onHover, onLeave }) {
     <div
       onMouseEnter={() => onHover(n.id)}
       onMouseLeave={onLeave}
-      style={{ width: n.w, background: '#0f0f1a', borderRadius: 10, padding: '12px 16px', borderLeft: `3px solid ${isHov ? n.color : n.color + '99'}`, boxShadow: shadow, cursor: 'pointer', transition: 'border-color 0.2s, box-shadow 0.2s' }}
+      onClick={() => onClick && onClick(n)}
+      style={{ width: n.w, background: '#0f0f1a', borderRadius: 10, padding: '12px 16px', borderLeft: `3px solid ${isHov ? n.color : n.color + '99'}`, boxShadow: shadow, cursor: 'pointer', transition: 'border-color 0.2s, box-shadow 0.2s, transform 0.15s', transform: isHov ? 'scale(1.04)' : 'scale(1)' }}
     >
       <div style={{ fontSize: 16, marginBottom: 6 }}>{n.icon}</div>
       <div style={{ fontFamily: PF, fontWeight: 600, fontSize: 11, color: isHov ? n.color : n.color + 'cc', letterSpacing: '0.04em', transition: 'color 0.2s' }}>{n.label}</div>
+      {isHov && <div style={{ fontFamily: SF, fontSize: 9, color: n.color + '99', marginTop: 4, letterSpacing: '0.06em' }}>↓ scroll to section</div>}
     </div>
   )
 
@@ -106,7 +108,7 @@ function NodeCard({ node: n, hovered, onClick, onHover, onLeave }) {
   )
 }
 
-export default function InvestigationGraph({ cf }) {
+export default function InvestigationGraph({ cf, onAgentClick }) {
   const [positions, setPositions] = useState({})
   const [hovered, setHovered] = useState(null)
   const [tooltip, setTooltip] = useState(null)
@@ -351,7 +353,7 @@ export default function InvestigationGraph({ cf }) {
                     hovered={hovered === n.id ? n.id : null}
                     onHover={() => {}}
                     onLeave={() => {}}
-                    onClick={() => {}}
+                    onClick={n.type === 'agent' ? () => onAgentClick?.(n.id.replace('agent_', '')) : undefined}
                   />
                 </div>
               )
