@@ -701,11 +701,22 @@ def main(upload_dir=None):
         else:
             print(f"[run_agents] WARNING: couldn't detect uploaded files — using default data", flush=True)
 
+    if upload_dir:
+        # Smaller subset for fast upload analysis (~5s)
+        provider_limit = 30
+        non_fraud_sample = 10
+        claims_per_provider = 50
+    else:
+        # Full scale for pre-computed sample dataset
+        provider_limit = 200
+        non_fraud_sample = 500
+        claims_per_provider = 50
+
     print("[run_agents] Loading dataset...", flush=True)
     data = load_subset(
-        provider_limit=30,
-        non_fraud_sample=10,
-        claims_per_provider=50,
+        provider_limit=provider_limit,
+        non_fraud_sample=non_fraud_sample,
+        claims_per_provider=claims_per_provider,
         file_map=file_map,
     )
 
