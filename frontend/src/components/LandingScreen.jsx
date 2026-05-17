@@ -23,14 +23,14 @@ export default function LandingScreen({ data, onBegin }) {
           transition={{ delay: 0.3, duration: 0.8 }}
           style={{ textAlign: 'center' }}
         >
-          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 500, letterSpacing: '0.4em', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 12 }}>
+          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 500, letterSpacing: '0.5em', color: 'var(--amber)', textTransform: 'uppercase', marginBottom: 14, opacity: 0.7 }}>
             SENTINEL
           </div>
-          <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 'clamp(2rem, 5vw, 3.5rem)', color: 'var(--text)', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+          <div style={{ fontFamily: '"Playfair Display", Georgia, serif', fontWeight: 700, fontSize: 'clamp(2rem, 5vw, 3.6rem)', color: 'var(--text)', letterSpacing: '-0.01em', lineHeight: 1.15 }}>
             Multi-Agent Fraud<br />
             <span style={{ color: 'var(--amber)' }}>Investigation System</span>
           </div>
-          <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 300, fontSize: 14, color: 'var(--muted)', letterSpacing: '0.08em', marginTop: 16 }}>
+          <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif', fontWeight: 300, fontSize: 14, color: 'var(--muted)', letterSpacing: '0.06em', marginTop: 18 }}>
             Medicare Claims · Knowledge Graph · 5 AI Agents
           </div>
         </motion.div>

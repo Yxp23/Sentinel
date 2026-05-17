@@ -84,10 +84,10 @@ export default function CommandCenter({ data, activeTab, setActiveTab, onInvesti
           position: 'sticky', top: 0, zIndex: 100,
         }}>
           <div>
-            <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 20, fontWeight: 700, letterSpacing: '0.25em', color: 'var(--amber)', textTransform: 'uppercase' }}>
+            <div style={{ fontFamily: '"Playfair Display", Georgia, serif', fontSize: 22, fontWeight: 700, color: 'var(--amber)' }}>
               Sentinel
             </div>
-            <div style={{ fontFamily: 'Inter, sans-serif', fontSize: 11, color: 'var(--muted)', letterSpacing: '0.08em', marginTop: 2 }}>
+            <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif', fontSize: 11, color: 'var(--muted)', letterSpacing: '0.08em', marginTop: 2 }}>
               Multi-Agent Fraud Investigation System
             </div>
           </div>
@@ -145,7 +145,7 @@ export default function CommandCenter({ data, activeTab, setActiveTab, onInvesti
             {/* Provider table */}
             <div style={{ padding: '28px 40px 48px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.18em', color: 'var(--muted)', textTransform: 'uppercase' }}>
+                <div style={{ fontFamily: '"Playfair Display", Georgia, serif', fontSize: 14, fontWeight: 600, color: 'var(--muted)' }}>
                   Flagged Providers — Click to Investigate
                 </div>
               </div>

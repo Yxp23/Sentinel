@@ -58,11 +58,11 @@ export default function IntroScreen({ onDone }) {
             transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
             style={{
               position: 'absolute',
-              fontFamily: 'Inter, sans-serif',
+              fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif',
               fontWeight: 200,
               fontSize: 'clamp(3.5rem, 10vw, 7rem)',
               color: '#fff',
-              letterSpacing: '-0.02em',
+              letterSpacing: '-0.04em',
               userSelect: 'none',
             }}
           >
@@ -90,21 +90,21 @@ export default function IntroScreen({ onDone }) {
             }}
           >
             <div style={{
-              fontFamily: 'Inter, sans-serif',
+              fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif',
               fontWeight: 300,
               fontSize: 'clamp(1.2rem, 3vw, 2rem)',
-              color: 'rgba(255,255,255,0.6)',
-              letterSpacing: '0.08em',
+              color: 'rgba(255,255,255,0.55)',
+              letterSpacing: '0.06em',
               textTransform: 'uppercase',
             }}>
               Welcome to
             </div>
             <div style={{
-              fontFamily: 'Inter, sans-serif',
-              fontWeight: 800,
+              fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif',
+              fontWeight: 700,
               fontSize: 'clamp(3rem, 9vw, 6.5rem)',
               color: '#e8a838',
-              letterSpacing: '-0.01em',
+              letterSpacing: '-0.03em',
               lineHeight: 1,
             }}>
               Sentinel
@@ -114,7 +114,7 @@ export default function IntroScreen({ onDone }) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.5, duration: 0.7 }}
               style={{
-                fontFamily: 'Inter, sans-serif',
+                fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif',
                 fontWeight: 300,
                 fontSize: 'clamp(0.75rem, 1.6vw, 1rem)',
                 color: 'rgba(255,255,255,0.3)',

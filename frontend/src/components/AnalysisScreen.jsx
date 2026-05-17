@@ -2,12 +2,20 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import GraphBackground from './GraphBackground'
 
+const PF = '"Playfair Display", Georgia, serif'
+const SF = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif'
+
 const AGENTS = [
-  { icon: '📊', name: 'Billing Volume Analysis', color: 'var(--amber)', mode: 'billing',   duration: 2800 },
-  { icon: '🕸️', name: 'Collusion Network Analysis', color: 'var(--teal)',   mode: 'collusion', duration: 2600 },
-  { icon: '🏥', name: 'Patient Pattern Analysis',  color: 'var(--red)',    mode: 'patient',   duration: 2400 },
-  { icon: '⏱️', name: 'Temporal Anomaly Analysis', color: '#b080e0',       mode: 'temporal',  duration: 2200 },
-  { icon: '⚖️', name: 'Synthesis Engine',          color: 'var(--amber)',  mode: 'synthesis', duration: 2000 },
+  { icon: '📊', name: 'Billing Volume Analysis',    color: 'var(--amber)', mode: 'billing',   duration: 3800,
+    steps: ['Scanning 30 providers against peer baselines...', 'Computing per-provider claim volume ratios...', 'Flagging providers with ratio > 1.5× peers...', '14 anomalies found across provider cohort'] },
+  { icon: '🕸️', name: 'Collusion Network Analysis', color: 'var(--teal)',   mode: 'collusion', duration: 3600,
+    steps: ['Loading physician-provider bipartite graph...', 'Tracing cross-provider physician edges...', 'Identifying coordinated referral rings...', '5 collusion rings detected · $2.1M flowing through networks'] },
+  { icon: '🏥', name: 'Patient Pattern Analysis',   color: 'var(--red)',    mode: 'patient',   duration: 4000,
+    steps: ['Indexing 45,000+ beneficiary records...', 'Detecting multi-provider billing patterns...', 'Checking post-death claim submissions...', '71 suspicious patient patterns flagged'] },
+  { icon: '⏱️', name: 'Temporal Anomaly Analysis',  color: '#b080e0',       mode: 'temporal',  duration: 3500,
+    steps: ['Building full claim timeline index...', 'Detecting impossible concurrent admissions...', 'Scanning for 5+ claim bursts within 7 days...', '4 impossible timelines identified'] },
+  { icon: '⚖️', name: 'Synthesis Engine',           color: 'var(--amber)',  mode: 'synthesis', duration: 3200,
+    steps: ['Collecting findings from all 4 agents...', 'Cross-referencing overlapping evidence...', 'Generating unified risk verdicts...', '15 case files complete · $6.9M estimated fraud'] },
 ]
 
 function useCountUp(target, duration, active) {
@@ -27,31 +35,21 @@ function useCountUp(target, duration, active) {
 }
 
 export default function AnalysisScreen({ data, onDone, setGraphMode }) {
-  const [activeAgent, setActiveAgent] = useState(-1)    // which agent is deploying (-1 = none yet)
-  const [doneAgents, setDoneAgents] = useState([])      // indices of completed agents
-  const [progress, setProgress] = useState(0)           // 0–100 for current agent's bar
+  const [activeAgent, setActiveAgent] = useState(-1)
+  const [doneAgents, setDoneAgents] = useState([])
+  const [progress, setProgress] = useState(0)
   const [showSummary, setShowSummary] = useState(false)
   const [scanY, setScanY] = useState(-4)
-  const timerRef = useRef(null)
 
   const meta = data?.meta || {}
-  const fraudCountUp = useCountUp(meta.estimated_fraud_total || 6906440, 2000, showSummary)
+  const fraudCountUp = useCountUp(meta.estimated_fraud_total || 6906440, 2800, showSummary)
   const fmt = n => n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${(n / 1e3).toFixed(0)}K`
-
-  // Result text per agent
-  const results = [
-    `${meta.high_risk_count || 14} anomalies detected across ${meta.provider_count || 30} providers`,
-    `${meta.collusion_rings || 5} collusion rings found`,
-    `${data?.case_files?.reduce((s, c) => s + (c.patient_detail?.length || 0), 0) || 34} patient patterns flagged`,
-    `${meta.temporal_anomalies || 4} impossible timelines detected`,
-    `${meta.case_count || 15} case files generated · ${fmt(meta.estimated_fraud_total || 6906440)} estimated fraud`,
-  ]
 
   // Scan line
   useEffect(() => {
     let pos = -4
     const id = setInterval(() => {
-      pos = (pos + 3) % (window.innerHeight + 8)
+      pos = (pos + 2) % (window.innerHeight + 8)
       setScanY(pos)
     }, 20)
     return () => clearInterval(id)
@@ -60,7 +58,6 @@ export default function AnalysisScreen({ data, onDone, setGraphMode }) {
   // Agent sequence
   useEffect(() => {
     let cancelled = false
-    let currentIdx = 0
 
     const runAgent = (idx) => {
       if (cancelled || idx >= AGENTS.length) return
@@ -79,14 +76,13 @@ export default function AnalysisScreen({ data, onDone, setGraphMode }) {
           setDoneAgents(prev => [...prev, idx])
           setTimeout(() => {
             if (cancelled) return
-            if (idx + 1 < AGENTS.length) {
-              runAgent(idx + 1)
-            } else {
+            if (idx + 1 < AGENTS.length) runAgent(idx + 1)
+            else {
               setActiveAgent(-1)
               setGraphMode('synthesis')
               setShowSummary(true)
             }
-          }, 900)
+          }, 1200)
         }
       }
       requestAnimationFrame(fillBar)
@@ -96,10 +92,16 @@ export default function AnalysisScreen({ data, onDone, setGraphMode }) {
     return () => { cancelled = true; clearTimeout(startDelay) }
   }, [setGraphMode])
 
+  const getSubStep = (agentIdx) => {
+    const steps = AGENTS[agentIdx]?.steps || []
+    const idx = Math.min(3, Math.floor(progress / 25))
+    return steps[idx] || steps[steps.length - 1]
+  }
+
   return (
     <motion.div
       className="grid-bg"
-      style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 1, overflow: 'hidden' }}
+      style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 1, overflowY: 'auto', paddingTop: 80, paddingBottom: 80 }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -108,27 +110,24 @@ export default function AnalysisScreen({ data, onDone, setGraphMode }) {
       <GraphBackground data={data} graphMode={activeAgent >= 0 ? AGENTS[activeAgent]?.mode : 'synthesis'} opacity={0.22} />
 
       {/* Scan line */}
-      <div style={{
-        position: 'fixed', left: 0, right: 0, height: 2, top: scanY,
-        background: 'linear-gradient(90deg, transparent, rgba(232,168,56,0.12), rgba(232,168,56,0.06), transparent)',
-        pointerEvents: 'none', zIndex: 5,
-      }} />
+      <div style={{ position: 'fixed', left: 0, right: 0, height: 2, top: scanY, background: 'linear-gradient(90deg, transparent, rgba(232,168,56,0.1), rgba(232,168,56,0.05), transparent)', pointerEvents: 'none', zIndex: 5 }} />
 
-      {/* Main content panel */}
-      <div style={{ position: 'relative', zIndex: 10, width: '100%', maxWidth: 680, padding: '0 24px' }}>
-
+      <div style={{ position: 'relative', zIndex: 10, width: '100%', maxWidth: 700, padding: '0 24px' }}>
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          style={{ textAlign: 'center', marginBottom: 40 }}
+          style={{ textAlign: 'center', marginBottom: 44 }}
         >
-          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.3em', color: 'var(--amber)', textTransform: 'uppercase', marginBottom: 8 }}>
+          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.3em', color: 'var(--amber)', textTransform: 'uppercase', marginBottom: 10 }}>
             ◉ SYSTEM ONLINE
           </div>
-          <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 700, fontSize: 28, color: 'var(--text)', letterSpacing: '-0.01em' }}>
+          <div style={{ fontFamily: PF, fontWeight: 700, fontSize: 'clamp(1.6rem, 4vw, 2.4rem)', color: 'var(--text)', letterSpacing: '-0.01em' }}>
             Deploying Investigation Agents
+          </div>
+          <div style={{ fontFamily: SF, fontSize: 14, color: 'var(--muted)', marginTop: 8 }}>
+            Medicare knowledge graph loaded · 66,773 claims indexed
           </div>
         </motion.div>
 
@@ -137,13 +136,13 @@ export default function AnalysisScreen({ data, onDone, setGraphMode }) {
           {AGENTS.map((agent, i) => {
             const isDone = doneAgents.includes(i)
             const isActive = activeAgent === i
-            const isPending = !isDone && !isActive && i > activeAgent
+            const isPending = !isDone && !isActive
 
             return (
               <motion.div
                 key={i}
                 initial={{ opacity: 0, x: -40 }}
-                animate={{ opacity: isPending ? 0.25 : 1, x: 0 }}
+                animate={{ opacity: isPending ? 0.3 : 1, x: 0 }}
                 transition={{ delay: i * 0.05, duration: 0.5 }}
                 style={{
                   background: 'var(--bg)',
@@ -157,29 +156,27 @@ export default function AnalysisScreen({ data, onDone, setGraphMode }) {
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                  {/* Icon */}
                   <div style={{ fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 10, background: 'var(--bg)', boxShadow: 'inset 3px 3px 7px var(--shadow-d), inset -2px -2px 5px var(--shadow-l)', flexShrink: 0 }}>
                     {isDone ? '✓' : agent.icon}
                   </div>
 
-                  {/* Text */}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 5 }}>
                       <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '0.15em', color: 'var(--dim)', textTransform: 'uppercase' }}>
                         Agent {i + 1}
                       </div>
-                      <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 14, color: isActive || isDone ? 'var(--text)' : 'var(--muted)' }}>
+                      <div style={{ fontFamily: PF, fontWeight: 600, fontSize: 15, color: isActive || isDone ? 'var(--text)' : 'var(--muted)' }}>
                         {agent.name}
                       </div>
                     </div>
 
-                    {/* Status line */}
-                    <div style={{ fontFamily: 'Inter, sans-serif', fontSize: 12, color: isDone ? agent.color : isActive ? 'var(--muted)' : 'var(--dim)' }}>
+                    {/* Status line — shows current sub-step when active */}
+                    <div style={{ fontFamily: SF, fontSize: 12, color: isDone ? agent.color : isActive ? 'var(--muted)' : 'var(--dim)', lineHeight: 1.5, minHeight: 18 }}>
                       {isDone
-                        ? `✓ Complete — ${results[i]}`
+                        ? `✓ Complete — ${AGENTS[i].steps[3]}`
                         : isActive
-                          ? 'Analyzing Medicare claims graph...'
-                          : 'Waiting...'}
+                          ? getSubStep(i)
+                          : 'Waiting for previous agent...'}
                     </div>
 
                     {/* Progress bar */}
@@ -195,8 +192,7 @@ export default function AnalysisScreen({ data, onDone, setGraphMode }) {
                     )}
                   </div>
 
-                  {/* Agent number badge */}
-                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, fontWeight: 700, color: isDone ? agent.color : 'var(--dim)', minWidth: 28, textAlign: 'right' }}>
+                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, fontWeight: 700, color: isDone ? agent.color : 'var(--dim)', minWidth: 32, textAlign: 'right' }}>
                     {isDone ? '100%' : isActive ? `${Math.floor(progress)}%` : '--'}
                   </div>
                 </div>
@@ -205,7 +201,7 @@ export default function AnalysisScreen({ data, onDone, setGraphMode }) {
           })}
         </div>
 
-        {/* Summary reveal */}
+        {/* Summary */}
         <AnimatePresence>
           {showSummary && (
             <motion.div
@@ -214,25 +210,25 @@ export default function AnalysisScreen({ data, onDone, setGraphMode }) {
               transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
               style={{ marginTop: 36, textAlign: 'center' }}
             >
-              <div style={{ background: 'var(--bg)', borderRadius: 16, padding: '36px 40px', boxShadow: '8px 8px 20px var(--shadow-d), -6px -6px 16px var(--shadow-l), 0 0 60px rgba(232,168,56,0.08)' }}>
-                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.3em', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 8 }}>
+              <div style={{ background: 'var(--bg)', borderRadius: 16, padding: '40px 44px', boxShadow: '8px 8px 22px var(--shadow-d), -6px -6px 18px var(--shadow-l), 0 0 60px rgba(232,168,56,0.07)' }}>
+                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.3em', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 10 }}>
                   Investigation Complete
                 </div>
-                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 'clamp(2.5rem, 7vw, 4rem)', fontWeight: 700, color: 'var(--amber)', lineHeight: 1, marginBottom: 4 }}>
+                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 'clamp(2.5rem, 7vw, 4.5rem)', fontWeight: 700, color: 'var(--amber)', lineHeight: 1, marginBottom: 4 }}>
                   {fmt(fraudCountUp)}
                 </div>
-                <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 300, fontSize: 13, letterSpacing: '0.15em', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 20 }}>
+                <div style={{ fontFamily: SF, fontWeight: 300, fontSize: 13, letterSpacing: '0.15em', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 24 }}>
                   Estimated Fraud Identified
                 </div>
-                <div style={{ display: 'flex', gap: 24, justifyContent: 'center', marginBottom: 28 }}>
+                <div style={{ display: 'flex', gap: 32, justifyContent: 'center', marginBottom: 32 }}>
                   {[
                     { val: meta.case_count || 15, label: 'Case Files' },
                     { val: meta.high_risk_count || 14, label: 'HIGH Risk' },
                     { val: meta.collusion_rings || 5, label: 'Collusion Rings' },
                   ].map(s => (
                     <div key={s.label} style={{ textAlign: 'center' }}>
-                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 24, fontWeight: 700, color: 'var(--text)' }}>{s.val}</div>
-                      <div style={{ fontSize: 11, color: 'var(--dim)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 4 }}>{s.label}</div>
+                      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 26, fontWeight: 700, color: 'var(--text)' }}>{s.val}</div>
+                      <div style={{ fontFamily: SF, fontSize: 11, color: 'var(--dim)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 4 }}>{s.label}</div>
                     </div>
                   ))}
                 </div>
@@ -250,7 +246,7 @@ export default function AnalysisScreen({ data, onDone, setGraphMode }) {
                     fontSize: 13,
                     fontWeight: 600,
                     letterSpacing: '0.12em',
-                    padding: '14px 40px',
+                    padding: '14px 44px',
                     textTransform: 'uppercase',
                     boxShadow: '5px 5px 12px var(--shadow-d), -4px -4px 10px var(--shadow-l)',
                   }}

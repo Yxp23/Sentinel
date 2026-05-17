@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import IntroScreen from './components/IntroScreen'
 import LandingScreen from './components/LandingScreen'
+import DataInputScreen from './components/DataInputScreen'
 import AnalysisScreen from './components/AnalysisScreen'
 import CommandCenter from './components/CommandCenter'
 import InvestigationView from './components/InvestigationView'
@@ -34,6 +35,13 @@ export default function App() {
       {screen === 'landing' && (
         <LandingScreen
           key="landing"
+          data={data}
+          onBegin={() => setScreen('dataInput')}
+        />
+      )}
+      {screen === 'dataInput' && (
+        <DataInputScreen
+          key="dataInput"
           data={data}
           onBegin={() => setScreen('analysis')}
         />
