@@ -41,7 +41,7 @@ app.post('/api/upload', upload.array('files'), (req, res) => {
   const fileCount = req.files?.length || 0
   send('stage', { id: 'uploaded', message: `${fileCount} file${fileCount !== 1 ? 's' : ''} received — starting agents` })
 
-  const proc = spawn('python3', ['src/api/export_results.py'], {
+  const proc = spawn('python3', ['src/api/export_results.py', '--provider_limit', '30', '--claims_per_provider', '20'], {
     cwd: ROOT,
     env: { ...process.env },
   })

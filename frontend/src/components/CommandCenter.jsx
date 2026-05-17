@@ -43,7 +43,7 @@ function SignalPills({ signals }) {
   )
 }
 
-export default function CommandCenter({ data, activeTab, setActiveTab, onInvestigate, graphMode }) {
+export default function CommandCenter({ data, activeTab, setActiveTab, onInvestigate, graphMode, onChangeDataset }) {
   const meta = data?.meta || {}
   const cases = data?.case_files || []
   const sorted = [...cases].sort((a, b) => b.estimated_fraud_amount - a.estimated_fraud_amount)
@@ -100,7 +100,17 @@ export default function CommandCenter({ data, activeTab, setActiveTab, onInvesti
             <span><span style={{ color: 'var(--amber)', fontWeight: 600 }}>{fmt(meta.estimated_fraud_total || 6906440)}</span> Est. Fraud</span>
           </div>
 
-          <nav style={{ display: 'flex', gap: 8 }}>
+          <nav style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {onChangeDataset && (
+              <button
+                onClick={onChangeDataset}
+                style={{ background: 'none', border: 'none', color: 'var(--dim)', cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, letterSpacing: '0.08em', padding: '6px 10px', marginRight: 4, transition: 'color 0.2s' }}
+                onMouseEnter={e => e.currentTarget.style.color = 'var(--muted)'}
+                onMouseLeave={e => e.currentTarget.style.color = 'var(--dim)'}
+              >
+                ← Change Dataset
+              </button>
+            )}
             {tabs.map(t => (
               <button
                 key={t.id}

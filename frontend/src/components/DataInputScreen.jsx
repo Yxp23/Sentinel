@@ -114,7 +114,7 @@ export default function DataInputScreen({ data, onBegin, onBack }) {
     } catch (err) {
       clearTimeout(timeout)
       if (err.name === 'AbortError') {
-        setErrorMsg('Upload timed out. The analysis takes ~15 minutes — try the sample dataset.')
+        setErrorMsg('Upload timed out after 30 minutes. Try the sample dataset for instant results.')
       } else {
         setErrorMsg(err.message || 'Upload failed. Make sure the server is running.')
       }
@@ -200,7 +200,10 @@ export default function DataInputScreen({ data, onBegin, onBack }) {
                   <span key={tag} style={{ fontFamily: MONO, fontSize: 10, padding: '3px 10px', borderRadius: 20, background: 'rgba(232,168,56,0.08)', color: 'var(--amber)', letterSpacing: '0.06em' }}>{tag}</span>
                 ))}
               </div>
-              <div style={{ marginTop: 24, fontFamily: MONO, fontSize: 12, color: 'var(--amber)', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ marginTop: 16, fontFamily: MONO, fontSize: 10, color: 'var(--amber)', letterSpacing: '0.08em', opacity: 0.75 }}>
+                Full analysis: 200 providers pre-computed
+              </div>
+              <div style={{ marginTop: 12, fontFamily: MONO, fontSize: 12, color: 'var(--amber)', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: 8 }}>
                 Begin immediately →
               </div>
             </motion.button>
@@ -245,10 +248,13 @@ export default function DataInputScreen({ data, onBegin, onBack }) {
                     <div style={{ fontFamily: SF, fontSize: 13, color: 'var(--muted)', lineHeight: 1.7, marginBottom: 16 }}>
                       Drag & drop CSV or Parquet files. Supports CMS Medicare Part B format, carrier claims, and DMERC files.
                     </div>
-                    <div style={{ display: 'flex', gap: 10 }}>
+                    <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
                       {['.csv', '.parquet', 'CMS format'].map(tag => (
                         <span key={tag} style={{ fontFamily: MONO, fontSize: 10, padding: '3px 10px', borderRadius: 20, background: 'rgba(56,178,172,0.08)', color: 'var(--teal)', letterSpacing: '0.06em' }}>{tag}</span>
                       ))}
+                    </div>
+                    <div style={{ fontFamily: MONO, fontSize: 10, color: 'var(--teal)', letterSpacing: '0.08em', opacity: 0.75 }}>
+                      Quick analysis: ~2–3 minutes
                     </div>
                   </div>
                   <div style={{ marginTop: 24, fontFamily: MONO, fontSize: 12, color: 'var(--dim)', letterSpacing: '0.08em', textAlign: 'center', padding: '14px', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10 }}>
@@ -308,7 +314,7 @@ export default function DataInputScreen({ data, onBegin, onBack }) {
 
                   <div style={{ fontFamily: SF, fontSize: 11, color: 'var(--dim)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 12, lineHeight: 1.6 }}>
                     {currentMsg}<br />
-                    <span style={{ color: 'rgba(255,255,255,0.18)' }}>Analysis takes ~15 minutes — you can leave this open</span>
+                    <span style={{ color: 'rgba(255,255,255,0.18)' }}>Quick analysis: ~2–3 minutes — you can leave this open</span>
                   </div>
                 </motion.div>
               )}
