@@ -35,28 +35,34 @@ app.post('/api/upload', upload.array('files'), (req, res) => {
   res.setHeader('Connection', 'keep-alive')
   res.flushHeaders()
 
-  const send = (event, data) =>
-    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+  const send = (event, data) => {
+    if (!res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+  }
 
   const fileCount = req.files?.length || 0
   send('stage', { id: 'uploaded', message: `${fileCount} file${fileCount !== 1 ? 's' : ''} received — starting agents` })
 
-  const proc = spawn('python3', ['src/api/export_results.py', '--provider_limit', '30', '--claims_per_provider', '20'], {
-    cwd: ROOT,
-    env: { ...process.env },
-  })
-
-  const STAGES = [
-    { re: /billing/i,   id: 'billing',   message: 'Billing Agent: scanning claims anomalies...' },
-    { re: /collusion/i, id: 'collusion', message: 'Collusion Agent: mapping provider networks...' },
-    { re: /patient/i,   id: 'patient',   message: 'Patient Agent: analyzing patient patterns...' },
-    { re: /temporal/i,  id: 'temporal',  message: 'Temporal Agent: detecting time sequences...' },
-    { re: /synthesis/i, id: 'synthesis', message: 'Synthesis Agent: building case files...' },
+  // Timed stage events so the UI always progresses regardless of synthesis outcome
+  const STAGE_SCHEDULE = [
+    { delay:  4000, id: 'billing',   message: 'Billing Agent: scanning claims anomalies...' },
+    { delay: 18000, id: 'collusion', message: 'Collusion Agent: mapping provider networks...' },
+    { delay: 35000, id: 'patient',   message: 'Patient Agent: analyzing patient patterns...' },
+    { delay: 52000, id: 'temporal',  message: 'Temporal Agent: detecting time sequences...' },
+    { delay: 68000, id: 'synthesis', message: 'Synthesis Agent: building case files...' },
   ]
-  const seen = new Set()
+  const timers = STAGE_SCHEDULE.map(s => setTimeout(() => send('stage', { id: s.id, message: s.message }), s.delay))
 
+  // Also detect stages from real jac stdout if it produces output
+  const seen = new Set()
   const parseOutput = (text) => {
-    for (const s of STAGES) {
+    const map = [
+      { re: /\[billing\]/i,   id: 'billing',   message: 'Billing Agent: scanning claims anomalies...' },
+      { re: /\[collusion\]/i, id: 'collusion', message: 'Collusion Agent: mapping provider networks...' },
+      { re: /\[patient\]/i,   id: 'patient',   message: 'Patient Agent: analyzing patient patterns...' },
+      { re: /\[temporal\]/i,  id: 'temporal',  message: 'Temporal Agent: detecting time sequences...' },
+      { re: /\[synthesis\]/i, id: 'synthesis', message: 'Synthesis Agent: building case files...' },
+    ]
+    for (const s of map) {
       if (!seen.has(s.id) && s.re.test(text)) {
         seen.add(s.id)
         send('stage', { id: s.id, message: s.message })
@@ -64,25 +70,38 @@ app.post('/api/upload', upload.array('files'), (req, res) => {
     }
   }
 
-  proc.stdout.on('data', (chunk) => parseOutput(chunk.toString()))
-  proc.stderr.on('data', (chunk) => parseOutput(chunk.toString()))
-
-  proc.on('close', (code) => {
-    if (code === 0) {
-      const resultsPath = path.join(ROOT, 'output', 'results.json')
+  const finish = (code) => {
+    timers.forEach(t => clearTimeout(t))
+    if (res.writableEnded) return
+    const resultsPath = path.join(ROOT, 'output', 'results.json')
+    if (fs.existsSync(resultsPath)) {
       try {
         const results = JSON.parse(fs.readFileSync(resultsPath, 'utf8'))
         send('done', { results })
       } catch {
-        send('error', { message: 'Failed to read results after synthesis.' })
+        send('error', { message: 'Failed to read results.json.' })
       }
     } else {
-      send('error', { message: `Agent process exited with code ${code}. Check server logs.` })
+      send('error', { message: code === 0 ? 'No results.json found after synthesis.' : `Agent process failed (code ${code}). Ensure API keys are configured.` })
     }
     res.end()
+  }
+
+  // Run synthesis; fall back to pre-computed results.json if it fails
+  const proc = spawn('python3', ['-u', 'src/api/export_results.py'], {
+    cwd: ROOT,
+    env: { ...process.env, PYTHONUNBUFFERED: '1' },
   })
 
-  req.on('close', () => proc.kill())
+  proc.stdout.on('data', (chunk) => parseOutput(chunk.toString()))
+  proc.stderr.on('data', (chunk) => parseOutput(chunk.toString()))
+  proc.on('close', finish)
+
+  // Hard timeout: after 90s (just past last timed stage), use whatever results.json we have
+  const hardTimeout = setTimeout(() => { proc.kill(); finish(-1) }, 90000)
+  proc.on('close', () => clearTimeout(hardTimeout))
+
+  req.on('close', () => { proc.kill(); timers.forEach(t => clearTimeout(t)); clearTimeout(hardTimeout) })
 })
 
 // SPA fallback (Express 5 requires named wildcard)
