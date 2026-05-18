@@ -34,14 +34,12 @@ function buildGraph(cf) {
     links.push({ source: `agent_${a}`, target: 'agent_synthesis', color: '#ffffff12', dashed: true })
   })
 
-  // Billing findings
   ;(cf.billing_detail?.anomalies || []).slice(0, 3).forEach((a, i) => {
     const id = `bf${i}`
     nodes.push({ id, type: 'finding', w: 218, h: 64, color: '#e8a838', label: a, tooltip: `Billing Finding ${i + 1}:\n${a}` })
     links.push({ source: 'agent_billing', target: id, color: '#e8a83840', dashed: true })
   })
 
-  // Collusion rings
   ;(cf.collusion_detail || []).slice(0, 2).forEach((r, i) => {
     const id = `cf${i}`
     const label = `Physician ${r.physician_id}: ${r.connected_providers?.length || 0} providers · ${fmt(r.total_ring_amount || 0)}`
@@ -49,7 +47,6 @@ function buildGraph(cf) {
     links.push({ source: 'agent_collusion', target: id, color: '#e85d5d40', dashed: true })
   })
 
-  // Patient findings
   ;(cf.patient_detail || []).slice(0, 3).forEach((p, i) => {
     const id = `pf${i}`
     const label = `${p.patient_id}: ${(p.flags || []).slice(0, 2).join(', ')}`
@@ -57,7 +54,6 @@ function buildGraph(cf) {
     links.push({ source: 'agent_patient', target: id, color: '#38b2ac40', dashed: true })
   })
 
-  // Temporal findings
   ;(cf.temporal_detail || []).slice(0, 3).forEach((t, i) => {
     const id = `tf${i}`
     const label = `${(t.anomaly_type || '').replace(/_/g, ' ')}: ${t.patient_id}`
@@ -68,17 +64,15 @@ function buildGraph(cf) {
   return { nodes, links }
 }
 
-function NodeCard({ node: n, hovered, onClick, onHover, onLeave }) {
-  const isHov = hovered === n.id
-  const shadow = isHov ? `0 0 0 2px ${n.color}, 6px 6px 20px #05050e` : n.type === 'provider' ? `0 0 30px ${n.color}28, 7px 7px 18px #05050e, -4px -4px 12px #1c1c30` : '5px 5px 14px #05050e, -3px -3px 10px #1c1c30'
+function NodeCard({ node: n, isHovered, onAgentClick }) {
+  const shadow = isHovered
+    ? `0 0 0 2px ${n.color}, 6px 6px 20px #05050e`
+    : n.type === 'provider'
+      ? `0 0 30px ${n.color}28, 7px 7px 18px #05050e, -4px -4px 12px #1c1c30`
+      : '5px 5px 14px #05050e, -3px -3px 10px #1c1c30'
 
   if (n.type === 'provider') return (
-    <div
-      onMouseEnter={() => onHover(n.id)}
-      onMouseLeave={onLeave}
-      onClick={() => onClick && onClick(n)}
-      style={{ width: n.w, background: '#0f0f1a', borderRadius: 12, padding: '15px 20px', border: `2px solid ${isHov ? n.color : n.color + '88'}`, boxShadow: shadow, cursor: 'default', transition: 'border-color 0.2s, box-shadow 0.2s' }}
-    >
+    <div style={{ width: n.w, background: '#0f0f1a', borderRadius: 12, padding: '15px 20px', border: `2px solid ${isHovered ? n.color : n.color + '88'}`, boxShadow: shadow, cursor: 'default', transition: 'border-color 0.2s, box-shadow 0.2s' }}>
       <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 700, color: n.color, letterSpacing: '0.06em' }}>{n.label}</div>
       <div style={{ fontFamily: SF, fontSize: 11, color: '#8888aa', marginTop: 5 }}>{n.sub}</div>
     </div>
@@ -86,59 +80,50 @@ function NodeCard({ node: n, hovered, onClick, onHover, onLeave }) {
 
   if (n.type === 'agent') return (
     <div
-      onMouseEnter={() => onHover(n.id)}
-      onMouseLeave={onLeave}
-      onClick={() => onClick && onClick(n)}
-      style={{ width: n.w, background: '#0f0f1a', borderRadius: 10, padding: '12px 16px', borderLeft: `3px solid ${isHov ? n.color : n.color + '99'}`, boxShadow: shadow, cursor: 'pointer', transition: 'border-color 0.2s, box-shadow 0.2s, transform 0.15s', transform: isHov ? 'scale(1.04)' : 'scale(1)' }}
+      onClick={() => onAgentClick?.(n.id.replace('agent_', ''))}
+      style={{ width: n.w, background: '#0f0f1a', borderRadius: 10, padding: '12px 16px', borderLeft: `3px solid ${isHovered ? n.color : n.color + '99'}`, boxShadow: shadow, cursor: 'pointer', transition: 'border-color 0.2s, box-shadow 0.2s, transform 0.15s', transform: isHovered ? 'scale(1.04)' : 'scale(1)' }}
     >
       <div style={{ fontSize: 16, marginBottom: 6 }}>{n.icon}</div>
-      <div style={{ fontFamily: PF, fontWeight: 600, fontSize: 11, color: isHov ? n.color : n.color + 'cc', letterSpacing: '0.04em', transition: 'color 0.2s' }}>{n.label}</div>
-      {isHov && <div style={{ fontFamily: SF, fontSize: 9, color: n.color + '99', marginTop: 4, letterSpacing: '0.06em' }}>↓ scroll to section</div>}
+      <div style={{ fontFamily: PF, fontWeight: 600, fontSize: 11, color: isHovered ? n.color : n.color + 'cc', letterSpacing: '0.04em', transition: 'color 0.2s' }}>{n.label}</div>
+      {isHovered && <div style={{ fontFamily: SF, fontSize: 9, color: n.color + '99', marginTop: 4, letterSpacing: '0.06em' }}>↓ scroll to section</div>}
     </div>
   )
 
   return (
-    <div
-      onMouseEnter={() => onHover(n.id)}
-      onMouseLeave={onLeave}
-      style={{ width: n.w, background: 'rgba(8,8,20,0.95)', borderRadius: 8, padding: '9px 13px', border: `1px solid ${isHov ? n.color + '66' : n.color + '25'}`, boxShadow: shadow, cursor: 'default', transition: 'border-color 0.2s, box-shadow 0.2s' }}
-    >
-      <div style={{ fontFamily: SF, fontSize: 11, color: isHov ? '#c0c0d8' : '#8888aa', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', transition: 'color 0.2s' }}>{n.label}</div>
+    <div style={{ width: n.w, background: 'rgba(8,8,20,0.95)', borderRadius: 8, padding: '9px 13px', border: `1px solid ${isHovered ? n.color + '66' : n.color + '25'}`, boxShadow: shadow, cursor: 'default', transition: 'border-color 0.2s, box-shadow 0.2s' }}>
+      <div style={{ fontFamily: SF, fontSize: 11, color: isHovered ? '#c0c0d8' : '#8888aa', lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', transition: 'color 0.2s' }}>{n.label}</div>
     </div>
   )
 }
 
 export default function InvestigationGraph({ cf, onAgentClick }) {
-  const [positions, setPositions] = useState({})
-  const [hovered, setHovered] = useState(null)
-  const [tooltip, setTooltip] = useState(null)
-  const [pan, setPan] = useState({ x: 0, y: 0 })
-  const [zoom, setZoom] = useState(2.0) // start zoomed in on center
-  const [panStart, setPanStart] = useState(null)
+  const [positions, setPositions]   = useState({})
+  const [hovered, setHovered]       = useState(null)
+  const [tooltip, setTooltip]       = useState(null)
+  const [pan, setPan]               = useState({ x: 0, y: 0 })
+  const [zoom, setZoom]             = useState(2.0)
+  const [panStart, setPanStart]     = useState(null)
   const [isDragging, setIsDragging] = useState(false)
-  const simRef = useRef(null)
-  const containerRef = useRef(null)
+  const simRef        = useRef(null)
+  const containerRef  = useRef(null)
+  const nodeDragRef   = useRef(null)
 
   const { nodes, links } = useMemo(() => cf ? buildGraph(cf) : { nodes: [], links: [] }, [cf])
 
   // Cinematic zoom-out on mount
   useEffect(() => {
-    const t = setTimeout(() => {
-      setZoom(1)
-      setPan({ x: 0, y: 0 })
-    }, 500)
+    const t = setTimeout(() => { setZoom(1); setPan({ x: 0, y: 0 }) }, 500)
     return () => clearTimeout(t)
   }, [cf?.provider_id])
 
   // D3 force simulation
   useEffect(() => {
     if (nodes.length === 0) return
-
     const cx = W / 2, cy = H / 2
     const nodeMap = {}
     const simNodes = nodes.map(n => {
       const nd = { ...n }
-      if (n.id === 'provider')         { nd.x = cx;         nd.y = cy;         nd.fx = cx;   nd.fy = cy }
+      if (n.id === 'provider')             { nd.x = cx;       nd.y = cy;       nd.fx = cx; nd.fy = cy }
       else if (n.id === 'agent_billing')   { nd.x = cx - 300; nd.y = cy - 220 }
       else if (n.id === 'agent_collusion') { nd.x = cx + 300; nd.y = cy - 220 }
       else if (n.id === 'agent_patient')   { nd.x = cx - 300; nd.y = cy + 220 }
@@ -176,7 +161,7 @@ export default function InvestigationGraph({ cf, onAgentClick }) {
     return () => sim.stop()
   }, [nodes.length, cf?.provider_id])
 
-  // Compute which link IDs are connected to hovered node
+  // Connected node/link ids for hover highlight
   const connectedIds = useMemo(() => {
     if (!hovered) return new Set()
     const ids = new Set([hovered])
@@ -189,52 +174,50 @@ export default function InvestigationGraph({ cf, onAgentClick }) {
     return ids
   }, [hovered, links])
 
-  const getPos = (id) => positions[id] || { x: W / 2, y: H / 2 }
+  const getPos = id => positions[id] || { x: W / 2, y: H / 2 }
 
-  // Zoom on wheel
-  const onWheel = useCallback((e) => {
+  // Wheel zoom
+  const onWheel = useCallback(e => {
     e.preventDefault()
     setZoom(z => Math.max(0.4, Math.min(3, z - e.deltaY * 0.001)))
   }, [])
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [onWheel])
 
-  // Pan on background drag
-  const onMouseDown = useCallback((e) => {
+  // Background pan
+  const onBgMouseDown = useCallback(e => {
     if (e.target.closest('[data-nodeid]')) return
     setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y })
     setIsDragging(true)
   }, [pan])
 
-  const onMouseMove = useCallback((e) => {
-    if (!isDragging || !panStart) return
-    setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y })
-  }, [isDragging, panStart])
-
-  const onMouseUp = useCallback(() => { setIsDragging(false); setPanStart(null) }, [])
-
-  // Node drag
-  const nodeDragRef = useRef(null)
-  const onNodeMouseDown = useCallback((e, nodeId) => {
-    if (nodeId === 'provider') return
-    e.stopPropagation()
-    const startX = e.clientX, startY = e.clientY
-    const startPos = positions[nodeId] || { x: W/2, y: H/2 }
-    nodeDragRef.current = { nodeId, startX, startY, startPos }
-  }, [positions])
-
-  const onNodeMouseMove = useCallback((e) => {
-    const drag = nodeDragRef.current
-    if (!drag || !simRef.current) return
-    const dx = (e.clientX - drag.startX) / zoom
-    const dy = (e.clientY - drag.startY) / zoom
-    const node = simRef.current.nodes().find(n => n.id === drag.nodeId)
-    if (node) {
-      node.fx = drag.startPos.x + dx
-      node.fy = drag.startPos.y + dy
-      simRef.current.alpha(0.3).restart()
+  const onMouseMove = useCallback(e => {
+    // Background pan
+    if (isDragging && panStart) {
+      setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y })
     }
-  }, [zoom])
+    // Node drag
+    const drag = nodeDragRef.current
+    if (drag && simRef.current) {
+      const dx = (e.clientX - drag.startX) / zoom
+      const dy = (e.clientY - drag.startY) / zoom
+      const node = simRef.current.nodes().find(n => n.id === drag.nodeId)
+      if (node) { node.fx = drag.startPos.x + dx; node.fy = drag.startPos.y + dy; simRef.current.alpha(0.3).restart() }
+    }
+    // Update tooltip position to follow cursor
+    if (hovered && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect()
+      setTooltip(t => t ? { ...t, x: e.clientX - rect.left, y: e.clientY - rect.top } : t)
+    }
+  }, [isDragging, panStart, zoom, hovered])
 
-  const onNodeMouseUp = useCallback(() => {
+  const onMouseUp = useCallback(() => {
+    setIsDragging(false)
+    setPanStart(null)
     const drag = nodeDragRef.current
     if (drag && simRef.current) {
       const node = simRef.current.nodes().find(n => n.id === drag.nodeId)
@@ -243,32 +226,56 @@ export default function InvestigationGraph({ cf, onAgentClick }) {
     nodeDragRef.current = null
   }, [])
 
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
-  }, [onWheel])
+  const onNodeMouseDown = useCallback((e, nodeId) => {
+    if (nodeId === 'provider') return
+    e.stopPropagation()
+    nodeDragRef.current = {
+      nodeId,
+      startX: e.clientX,
+      startY: e.clientY,
+      startPos: positions[nodeId] || { x: W / 2, y: H / 2 },
+    }
+  }, [positions])
+
+  // Hover handlers — show tooltip immediately, no click needed
+  const onNodeEnter = useCallback((e, n) => {
+    if (nodeDragRef.current) return  // suppress tooltip during drag
+    setHovered(n.id)
+    const rect = containerRef.current.getBoundingClientRect()
+    setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top, text: n.tooltip || n.label })
+  }, [])
+
+  const onNodeLeave = useCallback(() => {
+    if (nodeDragRef.current) return
+    setHovered(null)
+    setTooltip(null)
+  }, [])
 
   const resolvedLinks = links.map(l => {
     const sid = typeof l.source === 'object' ? l.source.id : l.source
     const tid = typeof l.target === 'object' ? l.target.id : l.target
     const sp = getPos(sid), tp = getPos(tid)
-    const isHov = hovered && (connectedIds.has(sid) && connectedIds.has(tid))
+    const isHov = hovered && connectedIds.has(sid) && connectedIds.has(tid)
     const dimmed = hovered && !isHov
     return { ...l, sid, tid, sx: sp.x, sy: sp.y, tx: tp.x, ty: tp.y, isHov, dimmed }
   })
 
   return (
     <div style={{ position: 'relative' }}>
-      {/* Hint */}
       <div style={{ position: 'absolute', top: 14, left: 18, zIndex: 20, fontFamily: 'JetBrains Mono, monospace', fontSize: 9, letterSpacing: '0.2em', color: '#404058', textTransform: 'uppercase', pointerEvents: 'none' }}>
         Scroll to zoom · Drag background to pan · Drag nodes to rearrange
       </div>
 
-      {/* Tooltip */}
-      {tooltip && (
-        <div style={{ position: 'absolute', zIndex: 50, left: tooltip.x + 14, top: tooltip.y - 10, background: '#0a0a18', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '10px 14px', boxShadow: '4px 4px 16px #05050e', pointerEvents: 'none', maxWidth: 260 }}>
+      {/* Tooltip — follows cursor, no click required */}
+      {tooltip && !nodeDragRef.current && (
+        <div style={{
+          position: 'absolute', zIndex: 50,
+          left: tooltip.x + 16, top: tooltip.y - 12,
+          background: '#0a0a18', border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: 10, padding: '10px 14px',
+          boxShadow: '4px 4px 16px #05050e',
+          pointerEvents: 'none', maxWidth: 280,
+        }}>
           {tooltip.text.split('\n').map((line, i) => (
             <div key={i} style={{ fontFamily: i === 0 ? PF : SF, fontSize: i === 0 ? 13 : 11, fontWeight: i === 0 ? 600 : 400, color: i === 0 ? '#e8e8f0' : '#8888aa', lineHeight: 1.5, marginBottom: i === 0 ? 4 : 0 }}>{line}</div>
           ))}
@@ -278,29 +285,19 @@ export default function InvestigationGraph({ cf, onAgentClick }) {
       <div
         ref={containerRef}
         style={{ width: '100%', height: 680, borderRadius: 16, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.04)', background: 'rgba(5,5,14,0.55)', cursor: isDragging ? 'grabbing' : 'grab', position: 'relative' }}
-        onMouseDown={onMouseDown}
-        onMouseMove={(e) => { onMouseMove(e); onNodeMouseMove(e) }}
-        onMouseUp={(e) => { onMouseUp(); onNodeMouseUp() }}
-        onMouseLeave={onMouseUp}
+        onMouseDown={onBgMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={() => { onMouseUp(); setHovered(null); setTooltip(null) }}
       >
-        {/* Inner pan/zoom container */}
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <div
-            style={{
-              width: W, height: H,
-              position: 'relative',
-              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-              transformOrigin: 'center center',
-              transition: zoom === 1 && pan.x === 0 && pan.y === 0 ? 'transform 1.4s cubic-bezier(0.16,1,0.3,1)' : 'none',
-              userSelect: 'none',
-            }}
-          >
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{
+            width: W, height: H, position: 'relative',
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transformOrigin: 'center center',
+            transition: zoom === 1 && pan.x === 0 && pan.y === 0 ? 'transform 1.4s cubic-bezier(0.16,1,0.3,1)' : 'none',
+            userSelect: 'none',
+          }}>
             {/* SVG edges */}
             <svg style={{ position: 'absolute', inset: 0, width: W, height: H, pointerEvents: 'none' }}>
               <defs>
@@ -310,8 +307,7 @@ export default function InvestigationGraph({ cf, onAgentClick }) {
                 </filter>
               </defs>
               {resolvedLinks.map((l, i) => (
-                <line
-                  key={i}
+                <line key={i}
                   x1={l.sx} y1={l.sy} x2={l.tx} y2={l.ty}
                   stroke={l.isHov ? (l.thick ? l.color : l.color.replace(/[0-9a-f]{2}$/i, 'cc')) : l.color}
                   strokeWidth={l.thick ? (l.isHov ? 3 : 2) : (l.isHov ? 1.5 : 1)}
@@ -331,12 +327,9 @@ export default function InvestigationGraph({ cf, onAgentClick }) {
                 <div
                   key={n.id}
                   data-nodeid={n.id}
-                  onMouseDown={(e) => onNodeMouseDown(e, n.id)}
-                  onMouseEnter={(e) => {
-                    setHovered(n.id)
-                    setTooltip({ x: e.clientX - containerRef.current.getBoundingClientRect().left, y: e.clientY - containerRef.current.getBoundingClientRect().top, text: n.tooltip || n.label })
-                  }}
-                  onMouseLeave={() => { setHovered(null); setTooltip(null) }}
+                  onMouseDown={e => onNodeMouseDown(e, n.id)}
+                  onMouseEnter={e => onNodeEnter(e, n)}
+                  onMouseLeave={onNodeLeave}
                   style={{
                     position: 'absolute',
                     left: pos.x - n.w / 2,
@@ -344,17 +337,11 @@ export default function InvestigationGraph({ cf, onAgentClick }) {
                     width: n.w,
                     opacity: dimmed ? 0.2 : 1,
                     zIndex: n.type === 'provider' ? 10 : n.type === 'agent' ? 5 : 1,
-                    cursor: n.id === 'provider' ? 'default' : 'grab',
+                    cursor: n.type === 'agent' ? 'pointer' : n.id === 'provider' ? 'default' : 'grab',
                     transition: 'left 0.07s linear, top 0.07s linear, opacity 0.25s',
                   }}
                 >
-                  <NodeCard
-                    node={n}
-                    hovered={hovered === n.id ? n.id : null}
-                    onHover={() => {}}
-                    onLeave={() => {}}
-                    onClick={n.type === 'agent' ? () => onAgentClick?.(n.id.replace('agent_', '')) : undefined}
-                  />
+                  <NodeCard node={n} isHovered={hovered === n.id} onAgentClick={onAgentClick} />
                 </div>
               )
             })}
@@ -364,13 +351,10 @@ export default function InvestigationGraph({ cf, onAgentClick }) {
         {/* Zoom controls */}
         <div style={{ position: 'absolute', bottom: 16, right: 16, zIndex: 20, display: 'flex', gap: 6 }}>
           {[{ label: '+', delta: 0.25 }, { label: '−', delta: -0.25 }, { label: '⌂', reset: true }].map(btn => (
-            <button
-              key={btn.label}
+            <button key={btn.label}
               onClick={() => btn.reset ? (setZoom(1), setPan({ x: 0, y: 0 })) : setZoom(z => Math.max(0.4, Math.min(3, z + btn.delta)))}
               style={{ width: 32, height: 32, borderRadius: 8, background: '#0f0f1a', border: '1px solid rgba(255,255,255,0.08)', color: '#8888aa', cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '3px 3px 8px #05050e, -2px -2px 6px #1c1c30' }}
-            >
-              {btn.label}
-            </button>
+            >{btn.label}</button>
           ))}
         </div>
       </div>
