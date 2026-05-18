@@ -73,6 +73,19 @@ graph LR
 
 > Results produced by running `jac run src/agents/synthesis_agent.jac` on the CMS Medicare training dataset.
 
+## Dataset
+
+Sentinel uses the [CMS Medicare Provider Fraud Detection dataset](https://www.kaggle.com/datasets/rohitrox/healthcare-provider-fraud-detection-analysis) from Kaggle.
+
+| File | Description |
+|---|---|
+| `Train-1542865627584.csv` | Provider fraud labels (Yes/No) |
+| `Train_Beneficiarydata-1542865627584.csv` | Patient demographics |
+| `Train_Inpatientdata-1542865627584.csv` | Inpatient claims |
+| `Train_Outpatientdata-1542865627584.csv` | Outpatient claims |
+
+Place these files in the `data/` directory. Alternatively, upload your own Medicare-format CSVs directly through the web UI — Sentinel auto-detects file types by column headers.
+
 ## Quick Start
 
 ```bash
