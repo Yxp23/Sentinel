@@ -73,7 +73,7 @@ export default function App() {
       {screen === 'landing' && (
         <LandingScreen
           key="landing"
-          data={data}
+          data={sampleData || data}
           onBegin={() => setScreen('dataInput')}
         />
       )}

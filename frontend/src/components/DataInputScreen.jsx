@@ -44,9 +44,8 @@ export default function DataInputScreen({ sampleData, onBegin, onBack }) {
 
   // --- Sample dataset — use the pre-loaded data stored in App (never overwritten by uploads) ---
   const handleSample = useCallback(() => {
+    if (!sampleData) return  // data not yet loaded, ignore click
     setMode('sample_loading')
-    // sampleData is the original pre-computed dataset loaded at app start.
-    // We don't re-fetch /api/results here because uploads overwrite that file.
     onBegin(sampleData)
   }, [onBegin, sampleData])
 
@@ -163,19 +162,19 @@ export default function DataInputScreen({ sampleData, onBegin, onBack }) {
               whileHover={{ y: -3 }}
               whileTap={{ scale: 0.98 }}
               onClick={handleSample}
-              disabled={mode === 'sample_loading'}
+              disabled={mode === 'sample_loading' || !sampleData}
               style={{
                 width: '100%',
                 background: 'var(--bg)',
                 border: '1px solid rgba(232,168,56,0.2)',
                 borderRadius: 16,
                 padding: '36px 32px',
-                cursor: mode === 'sample_loading' ? 'default' : 'pointer',
+                cursor: (mode === 'sample_loading' || !sampleData) ? 'default' : 'pointer',
                 textAlign: 'left',
                 boxShadow: '8px 8px 22px var(--shadow-d), -5px -5px 16px var(--shadow-l)',
                 transition: 'box-shadow 0.3s',
                 display: 'block',
-                opacity: mode === 'sample_loading' ? 0.7 : 1,
+                opacity: (mode === 'sample_loading' || !sampleData) ? 0.5 : 1,
               }}
             >
               <div style={{ fontSize: 32, marginBottom: 18 }}>
