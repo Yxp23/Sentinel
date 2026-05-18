@@ -209,9 +209,8 @@ export default function InvestigationGraph({ cf, onAgentClick }) {
       if (node) { node.fx = drag.startPos.x + dx; node.fy = drag.startPos.y + dy; simRef.current.alpha(0.3).restart() }
     }
     // Update tooltip position to follow cursor
-    if (hovered && containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect()
-      setTooltip(t => t ? { ...t, x: e.clientX - rect.left, y: e.clientY - rect.top } : t)
+    if (hovered) {
+      setTooltip(t => t ? { ...t, cx: e.clientX, cy: e.clientY } : t)
     }
   }, [isDragging, panStart, zoom, hovered])
 
@@ -237,16 +236,13 @@ export default function InvestigationGraph({ cf, onAgentClick }) {
     }
   }, [positions])
 
-  // Hover handlers — show tooltip immediately, no click needed
+  // Hover handlers — show tooltip immediately on mouseenter, no click needed
   const onNodeEnter = useCallback((e, n) => {
-    if (nodeDragRef.current) return  // suppress tooltip during drag
     setHovered(n.id)
-    const rect = containerRef.current.getBoundingClientRect()
-    setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top, text: n.tooltip || n.label })
+    setTooltip({ cx: e.clientX, cy: e.clientY, text: n.tooltip || n.label })
   }, [])
 
   const onNodeLeave = useCallback(() => {
-    if (nodeDragRef.current) return
     setHovered(null)
     setTooltip(null)
   }, [])
@@ -266,14 +262,14 @@ export default function InvestigationGraph({ cf, onAgentClick }) {
         Scroll to zoom · Drag background to pan · Drag nodes to rearrange
       </div>
 
-      {/* Tooltip — follows cursor, no click required */}
-      {tooltip && !nodeDragRef.current && (
+      {/* Tooltip — fixed position tracks raw clientX/Y, no parent offset issues */}
+      {tooltip && (
         <div style={{
-          position: 'absolute', zIndex: 50,
-          left: tooltip.x + 16, top: tooltip.y - 12,
-          background: '#0a0a18', border: '1px solid rgba(255,255,255,0.1)',
+          position: 'fixed', zIndex: 9999,
+          left: tooltip.cx + 16, top: tooltip.cy - 12,
+          background: '#0a0a18', border: '1px solid rgba(255,255,255,0.12)',
           borderRadius: 10, padding: '10px 14px',
-          boxShadow: '4px 4px 16px #05050e',
+          boxShadow: '4px 4px 20px #05050e',
           pointerEvents: 'none', maxWidth: 280,
         }}>
           {tooltip.text.split('\n').map((line, i) => (

@@ -43,15 +43,18 @@ function ScrollToTop() {
 export default function App() {
   const [screen, setScreen] = useState('intro')
   const [data, setData] = useState(null)
+  const [sampleData, setSampleData] = useState(null)  // original pre-computed data, never overwritten
   const [selectedProvider, setSelectedProvider] = useState(null)
   const [activeTab, setActiveTab] = useState('command')
   const [graphMode, setGraphMode] = useState('idle')
 
   useEffect(() => {
-    fetch('/results.json')
+    fetch('/api/results')
       .then(r => r.json())
-      .then(setData)
-      .catch(err => console.error('Failed to load results.json:', err))
+      .then(d => { setData(d); setSampleData(d) })
+      .catch(() => {
+        fetch('/results.json').then(r => r.json()).then(d => { setData(d); setSampleData(d) }).catch(() => {})
+      })
   }, [])
 
   const openInvestigation = (provId) => {
@@ -77,9 +80,15 @@ export default function App() {
       {screen === 'dataInput' && (
         <DataInputScreen
           key="dataInput"
-          data={data}
+          sampleData={sampleData}
           onBack={() => setScreen('landing')}
-          onBegin={(newData) => { if (newData) setData(newData); setScreen('analysis') }}
+          onBegin={(newData) => {
+            const d = newData || sampleData
+            setData(d)
+            setSelectedProvider(null)
+            setActiveTab('command')
+            setScreen('analysis')
+          }}
         />
       )}
       {screen === 'analysis' && (
@@ -98,7 +107,7 @@ export default function App() {
           setActiveTab={setActiveTab}
           onInvestigate={openInvestigation}
           graphMode={graphMode}
-          onChangeDataset={() => setScreen('dataInput')}
+          onChangeDataset={() => { setSelectedProvider(null); setScreen('dataInput') }}
         />
       )}
       {screen === 'investigation' && (

@@ -6,15 +6,15 @@ const PF = '"Playfair Display", Georgia, serif'
 const SF = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif'
 
 const AGENTS = [
-  { icon: '📊', name: 'Billing Volume Analysis',    color: 'var(--amber)', mode: 'billing',   duration: 2400,
+  { icon: '📊', name: 'Billing Volume Analysis',    color: 'var(--amber)', mode: 'billing',   duration: 1600,
     steps: ['Scanning 30 providers against peer baselines...', 'Computing per-provider claim volume ratios...', 'Flagging providers with ratio > 1.5× peers...', '14 anomalies found across provider cohort'] },
-  { icon: '🕸️', name: 'Collusion Network Analysis', color: 'var(--teal)',   mode: 'collusion', duration: 2200,
+  { icon: '🕸️', name: 'Collusion Network Analysis', color: 'var(--teal)',   mode: 'collusion', duration: 1600,
     steps: ['Loading physician-provider bipartite graph...', 'Tracing cross-provider physician edges...', 'Identifying coordinated referral rings...', '5 collusion rings detected · $2.1M flowing through networks'] },
-  { icon: '🏥', name: 'Patient Pattern Analysis',   color: 'var(--red)',    mode: 'patient',   duration: 2500,
+  { icon: '🏥', name: 'Patient Pattern Analysis',   color: 'var(--red)',    mode: 'patient',   duration: 1600,
     steps: ['Indexing 45,000+ beneficiary records...', 'Detecting multi-provider billing patterns...', 'Checking post-death claim submissions...', '71 suspicious patient patterns flagged'] },
-  { icon: '⏱️', name: 'Temporal Anomaly Analysis',  color: '#b080e0',       mode: 'temporal',  duration: 2200,
+  { icon: '⏱️', name: 'Temporal Anomaly Analysis',  color: '#b080e0',       mode: 'temporal',  duration: 1600,
     steps: ['Building full claim timeline index...', 'Detecting impossible concurrent admissions...', 'Scanning for 5+ claim bursts within 7 days...', '4 impossible timelines identified'] },
-  { icon: '⚖️', name: 'Synthesis Engine',           color: 'var(--amber)',  mode: 'synthesis', duration: 2000,
+  { icon: '⚖️', name: 'Synthesis Engine',           color: 'var(--amber)',  mode: 'synthesis', duration: 1600,
     steps: ['Collecting findings from all 4 agents...', 'Cross-referencing overlapping evidence...', 'Generating unified risk verdicts...', '15 case files complete · $6.9M estimated fraud'] },
 ]
 
@@ -82,7 +82,7 @@ export default function AnalysisScreen({ data, onDone, setGraphMode }) {
               setGraphMode('synthesis')
               setShowSummary(true)
             }
-          }, 600)
+          }, 400)
         }
       }
       requestAnimationFrame(fillBar)

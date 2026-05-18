@@ -32,7 +32,7 @@ function parseSSEChunk(text) {
   return events
 }
 
-export default function DataInputScreen({ data, onBegin, onBack }) {
+export default function DataInputScreen({ sampleData, onBegin, onBack }) {
   const [mode, setMode] = useState('choose') // choose | sample_loading | uploading | error
   const [dragging, setDragging] = useState(false)
   const [uploadedFiles, setUploadedFiles] = useState([])
@@ -42,19 +42,13 @@ export default function DataInputScreen({ data, onBegin, onBack }) {
   const fileRef = useRef(null)
   const abortRef = useRef(null)
 
-  // --- Sample dataset ---
-  const handleSample = useCallback(async () => {
+  // --- Sample dataset — use the pre-loaded data stored in App (never overwritten by uploads) ---
+  const handleSample = useCallback(() => {
     setMode('sample_loading')
-    try {
-      const res = await fetch('/api/results')
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const newData = await res.json()
-      onBegin(newData)
-    } catch {
-      // If API not available, use pre-loaded data and proceed anyway
-      onBegin(null)
-    }
-  }, [onBegin])
+    // sampleData is the original pre-computed dataset loaded at app start.
+    // We don't re-fetch /api/results here because uploads overwrite that file.
+    onBegin(sampleData)
+  }, [onBegin, sampleData])
 
   // --- Upload ---
   const handleFiles = useCallback(async (files) => {
