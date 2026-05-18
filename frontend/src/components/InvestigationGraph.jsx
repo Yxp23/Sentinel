@@ -26,8 +26,16 @@ function buildGraph(cf) {
     { id: 'synthesis', label: 'Synthesis Verdict', icon: '⚖️', color: '#e8a838', w: 150, h: 60 },
   ]
 
+  const agentSummary = {
+    billing:   (() => { const n = cf.billing_detail?.anomalies?.length || 0; const r = cf.billing_detail?.claim_count_ratio?.toFixed(1) || '—'; return n > 0 ? `${n} anomal${n===1?'y':'ies'} · ${r}× peer ratio` : 'No billing anomalies' })(),
+    collusion: (() => { const n = cf.collusion_detail?.length || 0; return n > 0 ? `${n} collusion ring${n===1?'':'s'} detected` : 'No collusion rings' })(),
+    patient:   (() => { const n = cf.patient_detail?.length || 0; return n > 0 ? `${n} patient flag${n===1?'':'s'} found` : 'No patient anomalies' })(),
+    temporal:  (() => { const n = cf.temporal_detail?.length || 0; return n > 0 ? `${n} timeline anomal${n===1?'y':'ies'}` : 'No temporal anomalies' })(),
+    synthesis: `${cf.overall_risk_level} risk · ${cf.estimated_fraud_amount > 0 ? fmt(cf.estimated_fraud_amount) : 'no est.'}`,
+  }
   AGENTS.forEach(a => {
-    nodes.push({ ...a, id: `agent_${a.id}`, type: 'agent', tooltip: `${a.label}\nClick to scroll to section` })
+    const key = a.id
+    nodes.push({ ...a, id: `agent_${a.id}`, type: 'agent', summary: agentSummary[key] || '', tooltip: `${a.label}\n${agentSummary[key] || ''}` })
     links.push({ source: 'provider', target: `agent_${a.id}`, color: a.color, thick: true })
   })
   ;['billing', 'collusion', 'patient', 'temporal'].forEach(a => {
@@ -85,7 +93,8 @@ function NodeCard({ node: n, isHovered, onAgentClick }) {
     >
       <div style={{ fontSize: 16, marginBottom: 6 }}>{n.icon}</div>
       <div style={{ fontFamily: PF, fontWeight: 600, fontSize: 11, color: isHovered ? n.color : n.color + 'cc', letterSpacing: '0.04em', transition: 'color 0.2s' }}>{n.label}</div>
-      {isHovered && <div style={{ fontFamily: SF, fontSize: 9, color: n.color + '99', marginTop: 4, letterSpacing: '0.06em' }}>↓ scroll to section</div>}
+      {isHovered && n.summary && <div style={{ fontFamily: SF, fontSize: 9, color: n.color + 'dd', marginTop: 4, lineHeight: 1.4 }}>{n.summary}</div>}
+      {isHovered && <div style={{ fontFamily: SF, fontSize: 8, color: n.color + '77', marginTop: 3, letterSpacing: '0.04em' }}>For more info, scroll down ↓</div>}
     </div>
   )
 

@@ -101,6 +101,7 @@ export default function AnalysisScreen({ data, onDone, setGraphMode }) {
   return (
     <motion.div
       className="grid-bg"
+      data-scroll-root
       style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 1, overflowY: 'auto', paddingTop: 80, paddingBottom: 80 }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
