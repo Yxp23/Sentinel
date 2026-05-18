@@ -704,7 +704,7 @@ def main(upload_dir=None):
 
     if upload_dir:
         provider_limit = 200
-        non_fraud_sample = 100
+        non_fraud_sample = 500
         claims_per_provider = 50
     else:
         provider_limit = 200

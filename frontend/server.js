@@ -29,7 +29,16 @@ app.get('/api/results', (req, res) => {
   res.sendFile(p)
 })
 
-app.post('/api/upload', upload.array('files'), (req, res) => {
+app.post('/api/upload',
+  (req, res, next) => {
+    // Clear stale files from previous uploads so file-type detection is always clean
+    const dir = path.join(ROOT, 'data', 'uploads')
+    fs.rmSync(dir, { recursive: true, force: true })
+    fs.mkdirSync(dir, { recursive: true })
+    next()
+  },
+  upload.array('files'),
+  (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
@@ -104,7 +113,8 @@ app.post('/api/upload', upload.array('files'), (req, res) => {
   proc.on('close', () => clearTimeout(hardTimeout))
 
   req.on('close', () => { proc.kill(); timers.forEach(t => clearTimeout(t)); clearTimeout(hardTimeout) })
-})
+  }
+)
 
 // SPA fallback (Express 5 requires named wildcard)
 app.get('/{*path}', (req, res) => {
