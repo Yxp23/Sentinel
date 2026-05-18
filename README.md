@@ -45,7 +45,7 @@ graph LR
 
 ### Key Design Decision
 
-> The Synthesis Agent requires **corroborating evidence** from multiple specialist agents before escalating to HIGH risk. A single agent signal = MEDIUM. This drives precision to **93%** — nearly zero wasted investigator hours.
+> The Synthesis Agent requires **corroborating evidence** from multiple specialist agents before escalating to HIGH risk. A single agent signal = MEDIUM. This drives precision to **98%** — nearly zero wasted investigator hours.
 
 ## Tech Stack
 
@@ -58,51 +58,61 @@ graph LR
 | **Server** | Express 5 + Multer (file upload) |
 | **Visualization** | D3.js force-directed graphs (background + investigation) |
 
-## Results (200-Provider Sample)
+## Results (200-Provider Sample, Jac-generated)
 
 | Metric | Value |
 |---|---|
 | Providers scanned | 200 |
-| Case files generated | 127 |
-| HIGH risk flagged | 45 |
-| MEDIUM risk flagged | 82 |
-| Collusion rings detected | 7 |
-| Temporal anomalies | 8 |
-| Estimated fraud exposure | **$55.86M** |
-| Precision (HIGH risk) | **93%** |
+| Case files generated | 104 |
+| HIGH risk flagged | 40 |
+| MEDIUM risk flagged | 64 |
+| Collusion rings detected | 8 |
+| Temporal anomalies | 4 |
+| Estimated fraud exposure | **$50.6M** |
+| Precision (HIGH risk) | **98%** |
+
+> Results produced by running `jac run src/agents/synthesis_agent.jac` on the CMS Medicare training dataset.
 
 ## Quick Start
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/your-team/jachacks-fraud.git
-cd jachacks-fraud
+git clone https://github.com/Yxp23/Sentinel.git
+cd Sentinel
 
-# 2. Place Medicare CSV data in data/ directory
-#    Required: Train-1542865627584.csv (labels), Train_Beneficiary.csv,
-#    Train_Inpatient.csv, Train_Outpatient.csv
-
-# 3. Run the Jac pipeline directly (optional — pre-computed results included)
-jac run src/agents/synthesis_agent.jac
-
-# 4. Start the frontend
+# 2. Install frontend dependencies
 cd frontend
 npm install
+
+# 3. Set your OpenAI API key
+export OPENAI_API_KEY=sk-...
+
+# 4. Build and start the server
 npm run build:start
 
 # 5. Open http://localhost:3002
 ```
 
+### Run the Jac Pipeline
+
+```bash
+# Run all 5 agents on the default dataset (produces output/results.json)
+jac run src/agents/synthesis_agent.jac
+
+# Or upload your own Medicare CSV files via the web UI
+# Requires: Beneficiary CSV, Inpatient CSV, Outpatient CSV
+```
+
 ### Environment Variables
 
 ```bash
-OPENAI_API_KEY=sk-...   # Required for the AI chat assistant
+OPENAI_API_KEY=sk-...   # Required for the Sentinel AI chat assistant
 ```
 
 ## Project Structure
 
 ```
-jachacks-fraud/
+Sentinel/
 ├── src/
 │   ├── graph/
 │   │   └── schema.jac              # Knowledge graph: Provider, Patient, Claim, Physician
@@ -119,10 +129,10 @@ jachacks-fraud/
 │   ├── loader/
 │   │   └── load_data.py             # CSV ingestion + graph-ready data preparation
 │   └── api/
-│       ├── run_agents.py            # Python fast-path for real-time uploads (~15s)
+│       ├── run_agents.py            # Fast-path for real-time uploads (~45s)
 │       └── export_results.py        # Results export utility
 ├── frontend/
-│   ├── src/components/              # React components (12 files)
+│   ├── src/components/              # React components
 │   ├── server.js                    # Express server: API + SSE streaming + chat
 │   └── package.json
 ├── output/
