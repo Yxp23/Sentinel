@@ -7,6 +7,7 @@ import AnalysisScreen from './components/AnalysisScreen'
 import CommandCenter from './components/CommandCenter'
 import InvestigationView from './components/InvestigationView'
 import SentinelChat from './components/SentinelChat'
+import { ErrorBoundary } from './components/shared/ErrorBoundary'
 
 function ScrollToTop() {
   const [visible, setVisible] = useState(false)
@@ -82,12 +83,9 @@ export default function App() {
   const [graphMode, setGraphMode] = useState('idle')
 
   useEffect(() => {
-    fetch('/api/results')
-      .then(r => r.json())
-      .then(d => { setData(d); setSampleData(d) })
-      .catch(() => {
-        fetch('/results.json').then(r => r.json()).then(d => { setData(d); setSampleData(d) }).catch(() => {})
-      })
+    // Always load pre-computed sample from public/results.json — never from /api/results
+    // (which reflects the last upload and would corrupt the sample dataset)
+    fetch('/results.json').then(r => r.json()).then(d => { setData(d); setSampleData(d) }).catch(() => {})
   }, [])
 
   const openInvestigation = (provId) => {
@@ -120,6 +118,7 @@ export default function App() {
         meta={chatMeta}
       />
     )}
+    <ErrorBoundary>
     <AnimatePresence mode="wait">
       {screen === 'intro' && (
         <IntroScreen key="intro" onDone={() => setScreen('landing')} />
@@ -173,6 +172,7 @@ export default function App() {
         />
       )}
     </AnimatePresence>
+    </ErrorBoundary>
     </>
   )
 }
