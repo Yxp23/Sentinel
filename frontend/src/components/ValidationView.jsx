@@ -25,11 +25,13 @@ export default function ValidationView({ data }) {
   const cases = data?.case_files || []
   const highCases = cases.filter(c => c.overall_risk_level === 'HIGH')
   const medCases = cases.filter(c => c.overall_risk_level === 'MEDIUM')
-  const truePositives = highCases.filter(c => c.fraud_label === true || c.fraud_label === 'Yes' || c.fraud_label === 'true')
+  const isKnownFraud = c => c.fraud_label === true || c.fraud_label === 'Yes' || c.fraud_label === 'true'
+  const truePositives = highCases.filter(isKnownFraud)
   const falsePositives = highCases.length - truePositives.length
-  const actualFraud = cases.filter(c => c.fraud_label === true || c.fraud_label === 'Yes' || c.fraud_label === 'true')
+  const actualFraud = cases.filter(isKnownFraud)
   const missed = actualFraud.filter(c => c.overall_risk_level === 'LOW').length
   const precision = highCases.length > 0 ? Math.round((truePositives.length / highCases.length) * 100) : 0
+  const recall = actualFraud.length > 0 ? Math.round((truePositives.length / actualFraud.length) * 100) : 0
   const pVal = useCountUp(precision, 3000)
 
   const flagged = cases.filter(c => c.overall_risk_level !== 'LOW')
@@ -68,10 +70,10 @@ export default function ValidationView({ data }) {
         {/* TP / FP / Missed breakdown */}
         <div style={{ display: 'flex', gap: 0, justifyContent: 'center', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 20, marginTop: 4 }}>
           {[
-            { label: 'True Positives', val: truePositives.length, color: 'var(--amber)', desc: 'Fraud correctly flagged' },
-            { label: 'False Positives', val: falsePositives, color: 'var(--red)', desc: 'Legitimate providers flagged' },
-            { label: 'Missed', val: missed, color: 'var(--dim)', desc: 'Fraud not detected' },
-            { label: 'Total Reviewed', val: cases.length, color: 'var(--muted)', desc: 'Providers analyzed' },
+            { label: 'True Positives', val: truePositives.length, color: 'var(--amber)', desc: 'Fraud correctly flagged HIGH' },
+            { label: 'False Positives', val: falsePositives, color: 'var(--red)', desc: 'Legit providers flagged HIGH' },
+            { label: 'Missed (LOW)', val: missed, color: 'var(--dim)', desc: 'Fraud below detection threshold' },
+            { label: 'Recall', val: `${recall}%`, color: 'var(--teal)', desc: 'Known fraud caught as HIGH' },
           ].map((s, i, arr) => (
             <div key={s.label} style={{ flex: 1, padding: '0 20px', borderRight: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none', textAlign: 'center' }}>
               <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 28, fontWeight: 700, color: s.color }}>{s.val}</div>
@@ -96,18 +98,18 @@ export default function ValidationView({ data }) {
           What This Means
         </div>
         <div style={{ fontFamily: PF, fontWeight: 600, fontSize: 18, color: 'var(--text)', marginBottom: 14, lineHeight: 1.4 }}>
-          A {precision}% precision score means zero wasted investigation hours.
+          {precision}% precision — agents stand on their own signals, no labels used.
         </div>
         <div style={{ fontFamily: SF, fontSize: 14, color: 'var(--muted)', lineHeight: 1.85 }}>
-          Every provider Sentinel flagged as HIGH risk was confirmed fraud in the ground truth dataset.
-          In real-world deployment, this translates to <span style={{ color: 'var(--amber)', fontWeight: 500 }}>zero wasted investigation hours</span> — every case file
-          Sentinel generates leads to confirmed fraud.
+          Sentinel detects fraud purely from behavioral signals — billing anomalies, physician collusion networks,
+          patient patterns, and temporal impossibilities. Ground-truth fraud labels are <span style={{ color: 'var(--amber)', fontWeight: 500 }}>not used during detection</span>,
+          only here for validation. The {precision}% precision on HIGH risk flags means{' '}
+          {falsePositives === 0 ? 'zero wasted' : 'minimal'} investigator hours chasing false leads.
         </div>
         <div style={{ fontFamily: SF, fontSize: 14, color: 'var(--muted)', lineHeight: 1.85, marginTop: 12 }}>
-          Traditional rule-based systems typically achieve <span style={{ color: 'var(--red)', fontWeight: 500 }}>40–60% precision</span>, meaning investigators
-          waste half their time chasing false leads. Sentinel's multi-agent reasoning approach — combining
-          billing volume, collusion network, patient pattern, and temporal anomaly signals — eliminates
-          false positives by requiring convergent evidence across agents before escalating a case.
+          Traditional rule-based systems typically achieve <span style={{ color: 'var(--red)', fontWeight: 500 }}>40–60% precision</span>. Sentinel's multi-agent approach —
+          requiring convergent evidence across billing volume, collusion, patient pattern, and temporal anomaly agents —
+          drives precision to {precision}% while catching {recall}% of known fraud as HIGH risk.
         </div>
       </motion.div>
 
@@ -123,8 +125,9 @@ export default function ValidationView({ data }) {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '0 4px 4px' }}>
             {flagged.map((cf, i) => {
-              const gt = cf.fraud_label === true || cf.fraud_label === 'Yes' || cf.fraud_label === 'true'
-              const match = (cf.overall_risk_level === 'HIGH' && gt) || (cf.overall_risk_level === 'MEDIUM')
+              const gt = isKnownFraud(cf)
+              const isHigh = cf.overall_risk_level === 'HIGH'
+              const matchIcon = isHigh && gt ? '✅' : isHigh && !gt ? '❌' : gt ? '🟡' : '⚪'
               return (
                 <motion.div
                   key={cf.provider_id}
@@ -145,7 +148,7 @@ export default function ValidationView({ data }) {
                       {gt ? '⚑ FRAUD' : '✓ LEGIT'}
                     </span>
                   </div>
-                  <div style={{ fontSize: 20, alignSelf: 'center' }}>{match ? '✅' : '❌'}</div>
+                  <div style={{ fontSize: 18, alignSelf: 'center' }} title={isHigh && gt ? 'True positive' : isHigh && !gt ? 'False positive' : gt ? 'Detected MEDIUM (under-escalated)' : 'MEDIUM, legit'}>{matchIcon}</div>
                   <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 600, color: cf.estimated_fraud_amount > 0 ? 'var(--amber)' : 'var(--dim)', alignSelf: 'center' }}>
                     {cf.estimated_fraud_amount > 0 ? fmt(cf.estimated_fraud_amount) : '—'}
                   </div>

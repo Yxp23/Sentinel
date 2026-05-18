@@ -584,10 +584,6 @@ def run_synthesis(providers, billing_findings, collusion_rings, patient_findings
         else:
             overall_risk = "LOW"
 
-        # Fraud-labeled providers with any detected signal → HIGH
-        # (mirrors original LLM behavior: ground-truth fraud label + evidence = HIGH)
-        if fraud_label and overall_risk == "MEDIUM":
-            overall_risk = "HIGH"
 
         if overall_risk == "LOW" and not fraud_label:
             continue
