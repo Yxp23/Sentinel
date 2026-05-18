@@ -5,341 +5,374 @@ const MONO = 'JetBrains Mono, monospace'
 const SF   = '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif'
 const PF   = '"Playfair Display", Georgia, serif'
 
-// ─── Graph geometry (viewBox 0 0 520 350) ────────────────────────────────
-const CX = 256, CY = 180  // provider center
-
+// ─── Node positions (viewBox 0 0 630 490) ──────────────────────────────────
+const CX = 312, CY = 258
 const N = {
   prv:  { x: CX,  y: CY,  type: 'provider',  label: 'PRV52019'  },
-  clm1: { x: 420, y: 105, type: 'claim',     label: 'CLM-001'   },
-  clm2: { x: 444, y: 180, type: 'claim',     label: 'CLM-002'   },
-  clm3: { x: 420, y: 258, type: 'claim',     label: 'CLM-003'   },
-  phy1: { x: 142, y: 62,  type: 'physician', label: 'PHY395933' },
-  phy2: { x: 370, y: 62,  type: 'physician', label: 'PHY393952' },
-  col1: { x:  58, y: 16,  type: 'collude',   label: 'PRV52119'  },
-  col2: { x: 462, y: 16,  type: 'collude',   label: 'PRV52065'  },
-  pat1: { x:  80, y: 105, type: 'patient',   label: 'BENE14097' },
-  pat2: { x:  58, y: 180, type: 'patient',   label: 'BENE15144' },
-  pat3: { x:  80, y: 258, type: 'patient',   label: 'BENE11670' },
+  clm1: { x: 496, y: 150, type: 'claim',      label: 'CLM-001'  },
+  clm2: { x: 522, y: 258, type: 'claim',      label: 'CLM-002'  },
+  clm3: { x: 496, y: 366, type: 'claim',      label: 'CLM-003'  },
+  phy1: { x: 188, y: 98,  type: 'physician',  label: 'PHY347413'},
+  phy2: { x: 438, y: 80,  type: 'physician',  label: 'PHY393952'},
+  col1: { x: 68,  y: 72,  type: 'collude',    label: 'PRV52119' },
+  col2: { x: 554, y: 72,  type: 'collude',    label: 'PRV52065' },
+  pat1: { x: 96,  y: 162, type: 'patient',    label: 'BENE20205'},
+  pat2: { x: 72,  y: 268, type: 'patient',    label: 'BENE15144'},
+  pat3: { x: 100, y: 372, type: 'patient',    label: 'BENE21360'},
 }
 
-// Quadratic bezier path bowing outward from provider center
-const qp = (sid, tid, str = 28) => {
+const AGENT_COLOR = {
+  billing: '#e8a838', collusion: '#e85d5d', patient: '#38b2ac',
+  temporal: '#b080e0', synthesis: '#e8a838',
+}
+
+// bezier path bowing outward from graph center
+const qp = (sid, tid, bow = 30) => {
   const s = N[sid], t = N[tid]
   const mx = (s.x + t.x) / 2, my = (s.y + t.y) / 2
-  const dx = mx - CX,          dy = my - CY
-  const len = Math.sqrt(dx*dx + dy*dy) || 1
-  return { d: `M${s.x},${s.y} Q${mx+dx/len*str},${my+dy/len*str} ${t.x},${t.y}`, cpx: mx+dx/len*str, cpy: my+dy/len*str }
+  const dx = mx - CX, dy = my - CY
+  const len = Math.sqrt(dx * dx + dy * dy) || 1
+  const cpx = mx + dx / len * bow, cpy = my + dy / len * bow
+  return { d: `M${s.x},${s.y} Q${cpx},${cpy} ${t.x},${t.y}`, cpx, cpy }
 }
 
-const EDGE_DEFS = [
-  { id:'e1', s:'prv',  t:'clm1', agent:'billing'   },
-  { id:'e2', s:'prv',  t:'clm2', agent:'billing'   },
-  { id:'e3', s:'prv',  t:'clm3', agent:'billing'   },
-  { id:'e4', s:'prv',  t:'phy1', agent:'collusion', str: 18 },
-  { id:'e5', s:'prv',  t:'phy2', agent:'collusion', str: 18 },
-  { id:'e6', s:'prv',  t:'pat1', agent:'patient'   },
-  { id:'e7', s:'prv',  t:'pat2', agent:'patient'   },
-  { id:'e8', s:'prv',  t:'pat3', agent:'patient'   },
-  { id:'e9', s:'col1', t:'phy1', agent:'collusion', str: 10 },
-  { id:'e10',s:'col2', t:'phy2', agent:'collusion', str: 10 },
+const hexPts = (cx, cy, r) =>
+  [...Array(6)].map((_, i) => {
+    const a = (i * 60 - 30) * (Math.PI / 180)
+    return `${(cx + r * Math.cos(a)).toFixed(1)},${(cy + r * Math.sin(a)).toFixed(1)}`
+  }).join(' ')
+
+// ─── Edge definitions ────────────────────────────────────────────────────────
+const EDGES = [
+  { id: 'e_pc1', s: 'prv',  t: 'clm1', agent: 'billing'   },
+  { id: 'e_pc2', s: 'prv',  t: 'clm2', agent: 'billing'   },
+  { id: 'e_pc3', s: 'prv',  t: 'clm3', agent: 'billing'   },
+  { id: 'e_ph1', s: 'prv',  t: 'phy1', agent: 'collusion', bow: 18 },
+  { id: 'e_ph2', s: 'prv',  t: 'phy2', agent: 'collusion', bow: 18 },
+  { id: 'e_co1', s: 'phy1', t: 'col1', agent: 'collusion', bow: 12, reveal: true },
+  { id: 'e_co2', s: 'phy2', t: 'col2', agent: 'collusion', bow: 12, reveal: true },
+  { id: 'e_p1',  s: 'pat1', t: 'prv',  agent: 'patient'   },
+  { id: 'e_p2',  s: 'pat2', t: 'prv',  agent: 'patient'   },
+  { id: 'e_p3',  s: 'pat3', t: 'prv',  agent: 'patient'   },
 ]
 
-const AGENT_COLOR = { billing:'#e8a838', collusion:'#e85d5d', patient:'#38b2ac', temporal:'#b080e0' }
-
-const PHASE_ORDER = ['formation','billing','collusion','patient','temporal','synthesis','hold']
-
-// ─── Phase data ────────────────────────────────────────────────────────────
+// ─── Phase data ──────────────────────────────────────────────────────────────
 const PHASES = [
   {
-    id: 'formation', dur: 3000, color: '#7878b8', agentN: null,
-    title: 'Knowledge Graph Formation',
-    icon: '🗺️', agentLabel: 'System',
-    what: 'Before any analysis, Sentinel maps all Medicare claims into a knowledge graph. Every provider, claim, physician, and patient becomes a node. Edges represent real-world relationships — who treated whom, which doctor referred where.',
-    findings: [
-      { icon: '◆', text: 'Provider PRV52019 loaded into graph' },
-      { icon: '◆', text: '1,961 claims ingested and indexed' },
-      { icon: '◆', text: '2 attending physicians linked to claims' },
-      { icon: '◆', text: '3 patient beneficiaries identified' },
+    id: 'formation', dur: 3200, color: '#7878c0', agentN: null,
+    icon: '🗺️', agentLabel: 'System', title: 'Building Knowledge Graph',
+    activeEdges: 'all', activeNodes: 'all',
+    showBarChart: false, showTimeline: false, showVerdict: false,
+    logLines: [
+      { t: 300,  color: '#6060a0', text: '› Initializing knowledge graph engine...' },
+      { t: 700,  color: '#e0e0ff', text: '› Provider PRV52019 → node created' },
+      { t: 1100, color: '#e0e0ff', text: '› 1,961 claims → 3 representative nodes' },
+      { t: 1500, color: '#e0e0ff', text: '› 2 attending physicians → linked' },
+      { t: 1900, color: '#e0e0ff', text: '› 3 patient beneficiaries → indexed' },
+      { t: 2400, color: '#9090d8', text: '› Graph ready · 11 nodes · 10 edges' },
     ],
     verdict: null,
-    visibleNodes: ['prv','clm1','clm2','clm3','phy1','phy2','pat1','pat2','pat3'],
-    litAgents: [],
+    pulses: [],
   },
   {
     id: 'billing', dur: 4500, color: '#e8a838', agentN: 1,
-    title: 'Billing Volume Agent',
-    icon: '📊', agentLabel: 'Agent 1 of 5',
-    what: 'Walks the Provider → Claim edges. Computes total claims and dollar volume for this provider, then compares against the peer group average. Ratios above 3× are automatically flagged HIGH RISK.',
-    findings: [
-      { icon: '⚑', text: 'Claim count ratio: 5.90× above peer average', color: '#e8a838' },
-      { icon: '⚑', text: 'Dollar amount ratio: 14.90× above peer average', color: '#e8a838' },
-      { icon: '·', text: '1,961 total claims · $5.99M billed' },
-      { icon: '·', text: 'Avg $3,057 per claim vs peer avg $402' },
+    icon: '📊', agentLabel: 'Agent 1 of 5', title: 'Billing Volume Analysis',
+    activeEdges: ['billing'], activeNodes: ['prv', 'clm1', 'clm2', 'clm3'],
+    showBarChart: true, showTimeline: false, showVerdict: false,
+    logLines: [
+      { t: 200,  color: '#6060a0', text: '› Walking Provider → Claim edges...' },
+      { t: 800,  color: '#e8a83888', text: '› Total claims: 1,961  ·  total billed: $5.99M' },
+      { t: 1400, color: '#e8a838',   text: '› claims_ratio = 5.90×  (peer avg = 1.00×)' },
+      { t: 2100, color: '#e8a838',   text: '› amount_ratio = 14.90×  (threshold = 3.00×)' },
+      { t: 2800, color: '#e0e0ff',   text: '› Avg $3,057/claim vs peer avg $402/claim' },
+      { t: 3400, color: '#e8a838',   text: '⚑ ANOMALY — both ratios exceed 3× threshold' },
     ],
-    verdict: { label: 'HIGH RISK', color: '#e8a838', bg: '#e8a83820', note: 'Both ratios far exceed 3× threshold' },
-    visibleNodes: ['prv','clm1','clm2','clm3'],
-    litAgents: ['billing'],
+    verdict: { label: 'HIGH RISK', note: 'Both ratios far exceed 3× peer threshold', color: '#e8a838' },
+    pulses: [
+      { s: 'prv', t: 'clm1', d: 0.3, c: '#e8a838' },
+      { s: 'prv', t: 'clm2', d: 1.0, c: '#e8a838' },
+      { s: 'prv', t: 'clm3', d: 1.7, c: '#e8a838' },
+      { s: 'prv', t: 'clm1', d: 2.8, c: '#e8a838' },
+      { s: 'prv', t: 'clm2', d: 3.5, c: '#e8a838' },
+    ],
   },
   {
     id: 'collusion', dur: 4500, color: '#e85d5d', agentN: 2,
-    title: 'Collusion Network Agent',
-    icon: '🕸️', agentLabel: 'Agent 2 of 5',
-    what: 'Walks Provider → Claim → Physician edges. A physician who appears across multiple distinct fraud-labeled providers is a red flag — they act as a conduit, routing payments through a coordinated ring.',
-    findings: [
-      { icon: '⚑', text: 'PHY395933 links PRV52019 ↔ PRV52119', color: '#e85d5d' },
-      { icon: '⚑', text: '$26,000 flowing through this fraud ring', color: '#e85d5d' },
-      { icon: '·', text: 'PHY393952 links PRV52019 ↔ PRV52065' },
-      { icon: '·', text: '$48,000 flowing through second ring' },
+    icon: '🕸️', agentLabel: 'Agent 2 of 5', title: 'Collusion Network Analysis',
+    activeEdges: ['billing', 'collusion'], activeNodes: ['prv', 'clm1', 'clm2', 'clm3', 'phy1', 'phy2', 'col1', 'col2'],
+    showBarChart: false, showTimeline: false, showVerdict: false,
+    logLines: [
+      { t: 200,  color: '#6060a0', text: '› Walking Provider → Claim → Physician edges...' },
+      { t: 900,  color: '#e0e0ff', text: '› Mapping physician-to-provider adjacency...' },
+      { t: 1600, color: '#e85d5d', text: '› PHY347413 links PRV52019 ↔ PRV52119' },
+      { t: 2200, color: '#e85d5d', text: '› PHY347413 total ring flow: $147,300 (6.0× avg)' },
+      { t: 2900, color: '#e85d5d', text: '› PHY393952 links PRV52019 ↔ PRV52065' },
+      { t: 3500, color: '#e85d5d', text: '⚑ RING DETECTED — 2 shared physicians found' },
     ],
-    verdict: { label: 'MEDIUM RISK', color: '#e85d5d', bg: '#e85d5d18', note: '2 collusion rings found, $74K total' },
-    visibleNodes: ['prv','clm1','clm2','clm3','phy1','phy2','col1','col2'],
-    litAgents: ['billing','collusion'],
+    verdict: { label: 'MEDIUM RISK', note: '2 collusion rings · $213K total flow', color: '#e85d5d' },
+    pulses: [
+      { s: 'prv',  t: 'phy1', d: 0.3, c: '#e85d5d' },
+      { s: 'phy1', t: 'col1', d: 1.1, c: '#e85d5d' },
+      { s: 'prv',  t: 'phy2', d: 1.6, c: '#e85d5d' },
+      { s: 'phy2', t: 'col2', d: 2.4, c: '#e85d5d' },
+      { s: 'prv',  t: 'phy1', d: 3.1, c: '#e85d5d' },
+    ],
   },
   {
     id: 'patient', dur: 4500, color: '#38b2ac', agentN: 3,
-    title: 'Patient Pattern Agent',
-    icon: '🏥', agentLabel: 'Agent 3 of 5',
-    what: 'Checks if the same patients are billed by multiple fraud-labeled providers. Legitimate patients almost never receive care from two coordinated fraud rings — this pattern strongly implies fabricated claims.',
-    findings: [
-      { icon: '⚑', text: 'BENE15144 billed by 2 fraud providers · $29K', color: '#38b2ac' },
-      { icon: '⚑', text: 'BENE11670 billed by 2 fraud providers · $19K', color: '#38b2ac' },
-      { icon: '·', text: 'BENE14097 billed by 2 fraud providers · $6K' },
-      { icon: '·', text: '6 total patients with fraud_provider_overlap' },
+    icon: '🏥', agentLabel: 'Agent 3 of 5', title: 'Patient Pattern Analysis',
+    activeEdges: ['billing', 'collusion', 'patient'], activeNodes: 'all',
+    showBarChart: false, showTimeline: false, showVerdict: false,
+    logLines: [
+      { t: 200,  color: '#6060a0', text: '› Walking Patient → Claim → Provider edges...' },
+      { t: 900,  color: '#e0e0ff', text: '› Checking multi-provider billing patterns...' },
+      { t: 1600, color: '#38b2ac', text: '› BENE20205 billed by 2 providers · $46K total' },
+      { t: 2300, color: '#38b2ac', text: '› BENE15144 billed by 2 providers · $29K total' },
+      { t: 3000, color: '#e0e0ff', text: '› Checking post-death claims... none found' },
+      { t: 3600, color: '#38b2ac', text: '⚑ OVERLAP — 2 patients flagged HIGH risk' },
     ],
-    verdict: { label: 'HIGH RISK', color: '#38b2ac', bg: '#38b2ac18', note: 'Patients shared across fraud ring' },
-    visibleNodes: ['prv','clm1','clm2','clm3','phy1','phy2','col1','col2','pat1','pat2','pat3'],
-    litAgents: ['billing','collusion','patient'],
+    verdict: { label: 'HIGH RISK', note: 'Patients shared across fraud ring', color: '#38b2ac' },
+    pulses: [
+      { s: 'pat1', t: 'prv', d: 0.3, c: '#38b2ac' },
+      { s: 'pat2', t: 'prv', d: 1.1, c: '#38b2ac' },
+      { s: 'pat3', t: 'prv', d: 1.9, c: '#38b2ac' },
+      { s: 'pat1', t: 'prv', d: 2.9, c: '#38b2ac' },
+    ],
   },
   {
-    id: 'temporal', dur: 3200, color: '#b080e0', agentN: 4,
-    title: 'Temporal Anomaly Agent',
-    icon: '⏱️', agentLabel: 'Agent 4 of 5',
-    what: 'Scans claim dates for physically impossible scenarios: a patient admitted to two hospitals simultaneously, or medical claims filed after the patient\'s recorded death.',
-    findings: [
-      { icon: '✓', text: '1,961 claims spanning Jan – Dec 2009', color: '#5050808a' },
-      { icon: '✓', text: 'No overlapping inpatient stays found', color: '#5050808a' },
-      { icon: '✓', text: 'No post-death claim submissions', color: '#5050808a' },
-      { icon: '✓', text: 'No 7-day fabrication burst patterns', color: '#5050808a' },
+    id: 'temporal', dur: 3500, color: '#b080e0', agentN: 4,
+    icon: '⏱️', agentLabel: 'Agent 4 of 5', title: 'Temporal Anomaly Analysis',
+    activeEdges: ['billing', 'collusion', 'patient'], activeNodes: 'all',
+    showBarChart: false, showTimeline: true, showVerdict: false,
+    logLines: [
+      { t: 200,  color: '#6060a0', text: '› Scanning all 1,961 claim timestamps...' },
+      { t: 800,  color: '#e0e0ff', text: '› Checking for overlapping inpatient stays...' },
+      { t: 1500, color: '#7070c0', text: '› ✓ No concurrent admissions detected' },
+      { t: 2100, color: '#7070c0', text: '› ✓ No post-death claim submissions' },
+      { t: 2700, color: '#7070c0', text: '› ✓ No 7-day fabrication burst patterns' },
+      { t: 3200, color: '#9090d8', text: '✓ CLEAN — timeline appears legitimate' },
     ],
-    verdict: { label: 'CLEAN — no anomalies', color: '#7070b0', bg: '#7070b015', note: 'Timeline appears legitimate' },
-    visibleNodes: ['prv','clm1','clm2','clm3','phy1','phy2','col1','col2','pat1','pat2','pat3'],
-    litAgents: ['billing','collusion','patient'],
+    verdict: { label: 'CLEAN', note: 'No timeline anomalies found', color: '#7070c0' },
+    pulses: [],
   },
   {
-    id: 'synthesis', dur: 3500, color: '#e8a838', agentN: 5,
-    title: 'Synthesis Agent (GPT-4o-mini)',
-    icon: '⚖️', agentLabel: 'Agent 5 of 5',
-    what: 'Reads all 4 agent reports and uses an LLM to generate a unified case file with full reasoning. Requires corroboration across multiple agents before escalating — this is what eliminates false positives.',
-    findings: [
-      { icon: '⚑', text: 'Billing: HIGH — 5.9× claims, 14.9× amount', color: '#e8a838' },
-      { icon: '⚑', text: 'Collusion: MEDIUM — 2 rings, $74K flowing', color: '#e85d5d' },
-      { icon: '⚑', text: 'Patient: HIGH — 6 fraud_provider_overlap', color: '#38b2ac' },
-      { icon: '✓', text: 'Temporal: CLEAN — no timeline anomalies', color: '#5050808a' },
+    id: 'synthesis', dur: 3800, color: '#e8a838', agentN: 5,
+    icon: '⚖️', agentLabel: 'Agent 5 of 5', title: 'Synthesis Engine',
+    activeEdges: 'all', activeNodes: 'all',
+    showBarChart: false, showTimeline: false, showVerdict: true,
+    logLines: [
+      { t: 200,  color: '#6060a0', text: '› Collecting all 4 agent findings...' },
+      { t: 700,  color: '#e8a838', text: '› Billing Agent:   HIGH  · 5.9× / 14.9× ratios' },
+      { t: 1200, color: '#e85d5d', text: '› Collusion Agent: MEDIUM · 2 rings · $213K' },
+      { t: 1700, color: '#38b2ac', text: '› Patient Agent:   HIGH  · 2 patients flagged' },
+      { t: 2200, color: '#7070c0', text: '› Temporal Agent:  CLEAN · no anomalies' },
+      { t: 2800, color: '#e8a838', text: '⚑ VERDICT — 3 agents corroborated → HIGH RISK' },
     ],
-    verdict: { label: '⚑  HIGH RISK · $5.99M estimated fraud', color: '#e8a838', bg: '#e8a83820', note: '3 of 4 agents corroborated', isFinal: true },
-    visibleNodes: ['prv','clm1','clm2','clm3','phy1','phy2','col1','col2','pat1','pat2','pat3'],
-    litAgents: ['billing','collusion','patient'],
-  },
-  {
-    id: 'hold', dur: 2000, color: '#e8a838', agentN: 5,
-    title: 'Synthesis Agent (GPT-4o-mini)',
-    icon: '⚖️', agentLabel: 'Agent 5 of 5',
-    what: 'Reads all 4 agent reports and uses an LLM to generate a unified case file with full reasoning. Requires corroboration across multiple agents before escalating — this is what eliminates false positives.',
-    findings: [
-      { icon: '⚑', text: 'Billing: HIGH — 5.9× claims, 14.9× amount', color: '#e8a838' },
-      { icon: '⚑', text: 'Collusion: MEDIUM — 2 rings, $74K flowing', color: '#e85d5d' },
-      { icon: '⚑', text: 'Patient: HIGH — 6 fraud_provider_overlap', color: '#38b2ac' },
-      { icon: '✓', text: 'Temporal: CLEAN — no timeline anomalies', color: '#5050808a' },
+    verdict: { label: '⚑  HIGH RISK · $5.99M', note: '3 of 4 agents corroborated', color: '#e8a838', isFinal: true },
+    pulses: [
+      { s: 'clm2', t: 'prv',  d: 0.2, c: '#e8a838' },
+      { s: 'phy1', t: 'prv',  d: 0.7, c: '#e85d5d' },
+      { s: 'pat2', t: 'prv',  d: 1.2, c: '#38b2ac' },
+      { s: 'clm1', t: 'prv',  d: 1.9, c: '#e8a838' },
+      { s: 'phy2', t: 'prv',  d: 2.4, c: '#e85d5d' },
+      { s: 'pat1', t: 'prv',  d: 2.9, c: '#38b2ac' },
     ],
-    verdict: { label: '⚑  HIGH RISK · $5.99M estimated fraud', color: '#e8a838', bg: '#e8a83820', note: '3 of 4 agents corroborated', isFinal: true },
-    visibleNodes: ['prv','clm1','clm2','clm3','phy1','phy2','col1','col2','pat1','pat2','pat3'],
-    litAgents: ['billing','collusion','patient'],
   },
 ]
 
-// ─── Node visual style ────────────────────────────────────────────────────
-const NODE_AGENT = { clm1:'billing', clm2:'billing', clm3:'billing', phy1:'collusion', phy2:'collusion', col1:'collusion', col2:'collusion', pat1:'patient', pat2:'patient', pat3:'patient' }
+const PHASE_DISPLAY = PHASES // all 6 phases shown
 
-function nodeVis(id, cfg) {
-  if (!cfg.visibleNodes.includes(id)) return null
+// ─── Compute edge visual ─────────────────────────────────────────────────────
+function getEdgeStyle(edge, phase) {
+  const { activeEdges, id: pid } = phase
+  const isSynth = pid === 'synthesis'
+  const col = AGENT_COLOR[edge.agent]
 
-  const dim  = { fill:'#13131f', stroke:'#2a2a48', sw:1.5, glow:null }
-  const na = NODE_AGENT[id]
-  const isSynth = cfg.id === 'synthesis' || cfg.id === 'hold'
-  const isLit   = na ? cfg.litAgents.includes(na) : cfg.litAgents.length > 0
-  const isCurrent = na ? cfg.id === na : false
+  if (edge.reveal && pid !== 'collusion' && pid !== 'patient' && pid !== 'temporal' && !isSynth)
+    return null
+
+  const phaseOrder = ['formation', 'billing', 'collusion', 'patient', 'temporal', 'synthesis']
+  const edgePhaseOrder = ['billing', 'collusion', 'patient']
+  const phIdx = phaseOrder.indexOf(pid)
+  const edIdx = edgePhaseOrder.indexOf(edge.agent)
+
+  if (activeEdges === 'all') {
+    if (isSynth) return { stroke: col, w: 2, op: 0.75, dash: null }
+    return { stroke: col + '40', w: 1, op: 1, dash: null }
+  }
+
+  if (!activeEdges.includes(edge.agent)) {
+    if (phIdx > edIdx + 1)
+      return { stroke: col + '28', w: 1, op: 0.7, dash: null }
+    return null
+  }
+
+  if (pid === edge.agent)
+    return { stroke: col, w: 2.2, op: 0.9, dash: null }
+
+  return { stroke: col + '55', w: 1.2, op: 1, dash: null }
+}
+
+// ─── Compute node visual ─────────────────────────────────────────────────────
+function getNodeStyle(id, phase) {
+  const { activeNodes, id: pid, color } = phase
+  const isSynth = pid === 'synthesis'
+  const nodeAgentMap = {
+    clm1: 'billing', clm2: 'billing', clm3: 'billing',
+    phy1: 'collusion', phy2: 'collusion',
+    col1: 'collusion', col2: 'collusion',
+    pat1: 'patient', pat2: 'patient', pat3: 'patient',
+  }
+  const na = nodeAgentMap[id]
+  const col = na ? AGENT_COLOR[na] : color
+
+  const dim = { fill: '#0f0f1e', stroke: '#252540', sw: 1.5, glow: null, op: 1 }
 
   if (id === 'prv') {
-    if (isSynth) return { fill:'#e8a83820', stroke:'#e8a838', sw:2.5, glow:'#e8a83860' }
-    if (cfg.litAgents.length > 0) return { fill:'#e8a83812', stroke:'#e8a83890', sw:2, glow: isCurrent ? null : null }
-    return { fill:'#13131f', stroke:'#e8a83855', sw:2, glow:null }
+    if (isSynth) return { fill: '#e8a83818', stroke: '#e8a838', sw: 2.5, glow: '#e8a83870', op: 1 }
+    if (activeNodes !== 'all' && !activeNodes.includes('prv')) return { ...dim, op: 0.3 }
+    return { fill: '#e8a83810', stroke: '#e8a83880', sw: 2, glow: null, op: 1 }
   }
+
+  if (id === 'col1' || id === 'col2') {
+    const visible = pid === 'collusion' || pid === 'patient' || pid === 'temporal' || isSynth
+    if (!visible) return null
+  }
+
+  if (activeNodes === 'all') {
+    if (!na) return dim
+    if (isSynth) return { fill: col + '18', stroke: col, sw: 2, glow: col + '55', op: 1 }
+    return { fill: col + '0c', stroke: col + '50', sw: 1.5, glow: null, op: 0.7 }
+  }
+
+  if (!activeNodes.includes(id)) return { ...dim, op: 0.2 }
 
   if (!na) return dim
 
-  const col = AGENT_COLOR[na]
-  if (!isLit) return dim
-  if (isSynth) return { fill: col+'15', stroke: col,      sw:2,   glow: col+'50' }
-  if (isCurrent) return { fill: col+'18', stroke: col,    sw:2,   glow: col+'55' }
-  // covered by a past agent — keep visible but dimmer
-  return { fill: col+'0c', stroke: col+'60', sw:1.5, glow:null }
+  const isCurrent = pid === na
+  if (isCurrent) return { fill: col + '1a', stroke: col, sw: 2, glow: col + '55', op: 1 }
+  return { fill: col + '0f', stroke: col + '60', sw: 1.5, glow: null, op: 0.85 }
 }
 
-// ─── Edge visual style ────────────────────────────────────────────────────
-function edgeVis(e, cfg) {
-  const phIdx  = PHASE_ORDER.indexOf(cfg.id)
-  const ePhIdx = PHASE_ORDER.indexOf(e.agent)
-  const isSynth = cfg.id === 'synthesis' || cfg.id === 'hold'
-  const col = AGENT_COLOR[e.agent]
-
-  // Collusion reveal edges only appear from collusion phase
-  if ((e.id === 'e9' || e.id === 'e10') && phIdx < 2) return null
-
-  if (isSynth) return { stroke: col, w: 1.5, op: 0.7, dash: null }
-  if (phIdx === ePhIdx) return { stroke: col, w: 2, op: 0.85, dash: null }
-  if (phIdx > ePhIdx)   return { stroke: col+'50', w: 1, op: 1, dash: null }
-  // future: ghost only if adjacent phase
-  if (phIdx === ePhIdx - 1) return { stroke: '#ffffff0a', w: 1, op: 1, dash: '5,4' }
-  return null
-}
-
-// ─── Pulse (simple, no keyframe array mismatch) ───────────────────────────
-function Pulse({ sx, sy, tx, ty, cpx, cpy, delay, color, pkey }) {
-  // Animate opacity separately so no keyframe count mismatch
+// ─── Pulse dot along bezier ──────────────────────────────────────────────────
+function Pulse({ s, t, delay, color, pkey }) {
+  const sn = N[s], tn = N[t]
+  if (!sn || !tn) return null
+  const { cpx, cpy } = qp(s, t, 28)
+  // Animate along quadratic bezier via t parameter
+  const steps = 20
+  const pts = [...Array(steps + 1)].map((_, i) => {
+    const u = i / steps
+    const x = (1-u)*(1-u)*sn.x + 2*(1-u)*u*cpx + u*u*tn.x
+    const y = (1-u)*(1-u)*sn.y + 2*(1-u)*u*cpy + u*u*tn.y
+    return [x, y]
+  })
   return (
     <motion.circle
       key={pkey}
-      r={5}
+      r={4.5}
       fill={color}
-      style={{ filter: `drop-shadow(0 0 6px ${color})` }}
-      initial={{ cx: sx, cy: sy, opacity: 0 }}
-      animate={{ cx: tx, cy: ty, opacity: [0, 1, 1, 0] }}
+      style={{ filter: `drop-shadow(0 0 7px ${color})` }}
+      initial={{ cx: pts[0][0], cy: pts[0][1], opacity: 0 }}
+      animate={{
+        cx: pts.map(p => p[0]),
+        cy: pts.map(p => p[1]),
+        opacity: [0, 1, 1, 1, 0],
+      }}
       transition={{
-        cx:      { duration: 1.0, delay, ease: 'easeInOut' },
-        cy:      { duration: 1.0, delay, ease: 'easeInOut' },
-        opacity: { duration: 1.0, delay, times: [0, 0.08, 0.82, 1] },
+        cx: { duration: 1.1, delay, ease: 'easeInOut' },
+        cy: { duration: 1.1, delay, ease: 'easeInOut' },
+        opacity: { duration: 1.1, delay, times: [0, 0.06, 0.5, 0.88, 1] },
       }}
     />
   )
 }
 
-// ─── Pulses per phase ─────────────────────────────────────────────────────
-const PHASE_PULSES = {
-  billing:   [
-    { s:'prv',  t:'clm1', d:0.1  }, { s:'prv',  t:'clm2', d:0.9  },
-    { s:'prv',  t:'clm3', d:1.7  }, { s:'prv',  t:'clm1', d:2.8  },
-  ],
-  collusion: [
-    { s:'prv',  t:'phy1', d:0.2  }, { s:'prv',  t:'phy2', d:1.0  },
-    { s:'phy1', t:'col1', d:1.6  }, { s:'phy2', t:'col2', d:2.4  },
-  ],
-  patient:   [
-    { s:'pat2', t:'prv',  d:0.2  }, { s:'pat1', t:'prv',  d:1.1  },
-    { s:'pat3', t:'prv',  d:1.9  },
-  ],
-  synthesis: [
-    { s:'clm2', t:'prv',  d:0.1,  c:'#e8a838' },
-    { s:'phy1', t:'prv',  d:0.55, c:'#e85d5d' },
-    { s:'pat2', t:'prv',  d:1.0,  c:'#38b2ac' },
-    { s:'clm1', t:'prv',  d:1.55, c:'#e8a838' },
-  ],
-  hold: [
-    { s:'clm2', t:'prv',  d:0.1,  c:'#e8a838' },
-    { s:'phy1', t:'prv',  d:0.55, c:'#e85d5d' },
-    { s:'pat2', t:'prv',  d:1.0,  c:'#38b2ac' },
-  ],
-}
-
-// ─── Hex helper ───────────────────────────────────────────────────────────
-const hexPts = (cx, cy, r) =>
-  [...Array(6)].map((_, i) => {
-    const a = (i*60 - 30) * (Math.PI/180)
-    return `${(cx + r*Math.cos(a)).toFixed(1)},${(cy + r*Math.sin(a)).toFixed(1)}`
-  }).join(' ')
-
-// ─── Node shapes ──────────────────────────────────────────────────────────
-function RenderNode({ id, vis, isSynth }) {
+// ─── Node shape renderer ─────────────────────────────────────────────────────
+function NodeShape({ id, vis, isSynth, loopKey }) {
   if (!vis) return null
   const n = N[id]
-  const glowStyle = vis.glow ? { filter: `drop-shadow(0 0 8px ${vis.glow})` } : undefined
-  const anim = { fill: vis.fill, stroke: vis.stroke, strokeWidth: vis.sw }
-  const tr   = { duration: 0.5 }
+  const glow = vis.glow ? { filter: `drop-shadow(0 0 10px ${vis.glow})` } : undefined
+  const a = { fill: vis.fill, stroke: vis.stroke, strokeWidth: vis.sw, opacity: vis.op ?? 1 }
+  const tr = { duration: 0.5 }
 
   if (n.type === 'provider') return (
     <g>
-      <motion.rect x={n.x-58} y={n.y-22} width={116} height={44} rx={10}
-        animate={anim} transition={tr} style={glowStyle} />
-      <text x={n.x} y={n.y-3} textAnchor="middle"
-        style={{ fontFamily:MONO, fontSize:11, fontWeight:700, fill:vis.stroke, letterSpacing:'0.04em', pointerEvents:'none' }}>
+      <motion.rect x={n.x - 60} y={n.y - 24} width={120} height={48} rx={11}
+        animate={a} transition={tr} style={glow} />
+      <text x={n.x} y={n.y - 4} textAnchor="middle"
+        style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, fill: vis.stroke, letterSpacing: '0.04em', pointerEvents: 'none' }}>
         {n.label}
       </text>
-      <text x={n.x} y={n.y+11} textAnchor="middle"
-        style={{ fontFamily:MONO, fontSize:6.5, fill:vis.stroke+'80', letterSpacing:'0.22em', pointerEvents:'none' }}>
+      <text x={n.x} y={n.y + 13} textAnchor="middle"
+        style={{ fontFamily: MONO, fontSize: 7, fill: vis.stroke + '70', letterSpacing: '0.24em', pointerEvents: 'none' }}>
         PROVIDER
       </text>
       {isSynth && (
-        <motion.text x={n.x} y={n.y-32} textAnchor="middle"
-          initial={{ opacity:0, y: n.y-26 }} animate={{ opacity:1, y: n.y-32 }}
-          transition={{ delay:0.5, duration:0.5 }}
-          style={{ fontFamily:MONO, fontSize:10, fontWeight:700, fill:'#e8a838', letterSpacing:'0.06em' }}>
-          ⚑ HIGH RISK
-        </motion.text>
+        <motion.g
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.8, duration: 0.5 }}>
+          <rect x={n.x - 64} y={n.y - 62} width={128} height={26} rx={6}
+            fill="#e8a83822" stroke="#e8a838" strokeWidth={1.5} />
+          <text x={n.x} y={n.y - 44} textAnchor="middle"
+            style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, fill: '#e8a838', letterSpacing: '0.06em', pointerEvents: 'none' }}>
+            ⚑ HIGH RISK · $5.99M
+          </text>
+        </motion.g>
       )}
     </g>
   )
 
   if (n.type === 'claim') return (
     <g>
-      <motion.rect x={n.x-36} y={n.y-13} width={72} height={26} rx={5}
-        animate={anim} transition={tr} style={glowStyle} />
-      <text x={n.x} y={n.y+4} textAnchor="middle"
-        style={{ fontFamily:MONO, fontSize:8.5, fill:vis.stroke, pointerEvents:'none' }}>
+      <motion.rect x={n.x - 38} y={n.y - 15} width={76} height={30} rx={6}
+        animate={a} transition={tr} style={glow} />
+      <text x={n.x} y={n.y + 5} textAnchor="middle"
+        style={{ fontFamily: MONO, fontSize: 9, fill: vis.stroke, pointerEvents: 'none' }}>
         {n.label}
       </text>
     </g>
   )
 
-  if (n.type === 'physician') {
-    const r = 27
-    return (
-      <g>
-        <motion.polygon points={hexPts(n.x, n.y, r)}
-          animate={anim} transition={tr} style={glowStyle} />
-        <text x={n.x} y={n.y-4} textAnchor="middle"
-          style={{ fontFamily:MONO, fontSize:6.5, fill:vis.stroke+'88', letterSpacing:'0.12em', pointerEvents:'none' }}>PHY</text>
-        <text x={n.x} y={n.y+7} textAnchor="middle"
-          style={{ fontFamily:MONO, fontSize:8, fontWeight:600, fill:vis.stroke, pointerEvents:'none' }}>
-          {n.label.slice(3)}
-        </text>
-      </g>
-    )
-  }
+  if (n.type === 'physician') return (
+    <g>
+      <motion.polygon points={hexPts(n.x, n.y, 28)}
+        animate={a} transition={tr} style={glow} />
+      <text x={n.x} y={n.y - 4} textAnchor="middle"
+        style={{ fontFamily: MONO, fontSize: 6.5, fill: vis.stroke + '90', letterSpacing: '0.12em', pointerEvents: 'none' }}>PHY</text>
+      <text x={n.x} y={n.y + 8} textAnchor="middle"
+        style={{ fontFamily: MONO, fontSize: 8.5, fontWeight: 600, fill: vis.stroke, pointerEvents: 'none' }}>
+        {n.label.slice(3)}
+      </text>
+    </g>
+  )
 
   if (n.type === 'collude') return (
     <g>
-      <motion.rect x={n.x-47} y={n.y-14} width={94} height={28} rx={6}
-        animate={anim} transition={tr} style={glowStyle} />
-      <text x={n.x} y={n.y-1} textAnchor="middle"
-        style={{ fontFamily:MONO, fontSize:8.5, fontWeight:600, fill:vis.stroke, pointerEvents:'none' }}>
+      <motion.rect x={n.x - 50} y={n.y - 16} width={100} height={32} rx={7}
+        animate={a} transition={tr} style={glow} />
+      <text x={n.x} y={n.y - 2} textAnchor="middle"
+        style={{ fontFamily: MONO, fontSize: 9, fontWeight: 600, fill: vis.stroke, pointerEvents: 'none' }}>
         {n.label}
       </text>
-      <text x={n.x} y={n.y+9} textAnchor="middle"
-        style={{ fontFamily:MONO, fontSize:6, fill:vis.stroke+'80', letterSpacing:'0.1em', pointerEvents:'none' }}>
-        FRAUD PARTNER
+      <text x={n.x} y={n.y + 10} textAnchor="middle"
+        style={{ fontFamily: MONO, fontSize: 6, fill: vis.stroke + '80', letterSpacing: '0.1em', pointerEvents: 'none' }}>
+        PARTNER
       </text>
     </g>
   )
 
   if (n.type === 'patient') return (
     <g>
-      <motion.circle cx={n.x} cy={n.y} r={22}
-        animate={anim} transition={tr} style={glowStyle} />
-      <text x={n.x} y={n.y-3} textAnchor="middle"
-        style={{ fontFamily:MONO, fontSize:6.5, fill:vis.stroke+'88', letterSpacing:'0.08em', pointerEvents:'none' }}>
+      <motion.circle cx={n.x} cy={n.y} r={24}
+        animate={a} transition={tr} style={glow} />
+      <text x={n.x} y={n.y - 4} textAnchor="middle"
+        style={{ fontFamily: MONO, fontSize: 6.5, fill: vis.stroke + '90', letterSpacing: '0.1em', pointerEvents: 'none' }}>
         BENE
       </text>
-      <text x={n.x} y={n.y+8} textAnchor="middle"
-        style={{ fontFamily:MONO, fontSize:8, fontWeight:600, fill:vis.stroke, pointerEvents:'none' }}>
+      <text x={n.x} y={n.y + 9} textAnchor="middle"
+        style={{ fontFamily: MONO, fontSize: 8.5, fontWeight: 600, fill: vis.stroke, pointerEvents: 'none' }}>
         {n.label.slice(4)}
       </text>
     </g>
@@ -348,17 +381,185 @@ function RenderNode({ id, vis, isSynth }) {
   return null
 }
 
-// ─── Main component ────────────────────────────────────────────────────────
+// ─── Billing bar chart overlay ───────────────────────────────────────────────
+function BillingChart({ show, loopKey }) {
+  if (!show) return null
+  const bx = 148, by = 168, bw = 138, bh = 80
+  const maxBar = 98
+  return (
+    <motion.g key={`bc-${loopKey}`}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+      transition={{ delay: 1.2, duration: 0.5 }}>
+      <rect x={bx} y={by} width={bw} height={bh} rx={7}
+        fill="#0b0b19" stroke="#e8a83822" strokeWidth={1} />
+      <text x={bx + 9} y={by + 14}
+        style={{ fontFamily: MONO, fontSize: 7, fill: '#e8a83888', letterSpacing: '0.15em' }}>BILLING RATIOS</text>
+
+      {/* Claims bar */}
+      <text x={bx + 9} y={by + 30} style={{ fontFamily: MONO, fontSize: 7, fill: '#707090' }}>CLAIMS</text>
+      <rect x={bx + 9} y={by + 33} width={maxBar} height={8} rx={3} fill="#1a1a2e" />
+      <motion.rect x={bx + 9} y={by + 33} width={0} height={8} rx={3} fill="#e8a838"
+        animate={{ width: maxBar * (5.9 / 15) }}
+        transition={{ delay: 1.6, duration: 0.9, ease: 'easeOut' }} />
+      <motion.text x={bx + 9 + maxBar * (5.9 / 15) + 4} y={by + 40} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.5 }}
+        style={{ fontFamily: MONO, fontSize: 8, fontWeight: 700, fill: '#e8a838' }}>5.9×</motion.text>
+
+      {/* Amount bar */}
+      <text x={bx + 9} y={by + 57} style={{ fontFamily: MONO, fontSize: 7, fill: '#707090' }}>AMOUNT</text>
+      <rect x={bx + 9} y={by + 60} width={maxBar} height={8} rx={3} fill="#1a1a2e" />
+      <motion.rect x={bx + 9} y={by + 60} width={0} height={8} rx={3} fill="#e8a838cc"
+        animate={{ width: maxBar }}
+        transition={{ delay: 1.8, duration: 1.1, ease: 'easeOut' }} />
+      <motion.text x={bx + 9 + maxBar + 4} y={by + 68} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.9 }}
+        style={{ fontFamily: MONO, fontSize: 8, fontWeight: 700, fill: '#e8a838' }}>14.9×</motion.text>
+
+      {/* Peer line */}
+      <motion.line x1={bx + 9 + maxBar * (1 / 15)} y1={by + 33} x2={bx + 9 + maxBar * (1 / 15)} y2={by + 68 + 4}
+        stroke="#ffffff25" strokeWidth={1} strokeDasharray="2,2"
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.0 }} />
+      <motion.text x={bx + 9 + maxBar * (1 / 15) + 2} y={by + 78} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.2 }}
+        style={{ fontFamily: MONO, fontSize: 6.5, fill: '#454560' }}>peer avg</motion.text>
+    </motion.g>
+  )
+}
+
+// ─── Temporal timeline overlay ───────────────────────────────────────────────
+function TimelineBar({ show, loopKey }) {
+  if (!show) return null
+  const tx = 34, ty = 414, tw = 562, th = 30
+  return (
+    <motion.g key={`tl-${loopKey}`}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+      transition={{ duration: 0.5 }}>
+      <rect x={tx} y={ty} width={tw} height={th} rx={6} fill="#0c0c1a" stroke="#b080e020" strokeWidth={1} />
+      {[52, 104, 156, 208, 262, 316, 370, 424, 476, 538].map((x, i) => (
+        <rect key={i} x={x} y={ty + 2} width={3} height={th - 4} rx={1.5} fill="#b080e035" />
+      ))}
+      <defs>
+        <linearGradient id="tlswp" x1="0" x2="1">
+          <stop offset="0%" stopColor="#b080e000" />
+          <stop offset="40%" stopColor="#b080e015" />
+          <stop offset="100%" stopColor="#b080e060" />
+        </linearGradient>
+      </defs>
+      <motion.rect x={tx} y={ty} width={0} height={th} rx={6} fill="url(#tlswp)"
+        animate={{ width: [0, tw] }}
+        transition={{ duration: 2.4, delay: 0.4, ease: 'easeInOut' }} />
+      <text x={tx + 6} y={ty - 5}
+        style={{ fontFamily: MONO, fontSize: 7, fill: '#3a3a60', letterSpacing: '0.06em' }}>JAN 2009</text>
+      <text x={tx + tw - 6} y={ty - 5} textAnchor="end"
+        style={{ fontFamily: MONO, fontSize: 7, fill: '#3a3a60' }}>DEC 2009</text>
+      <motion.text x={tx + tw / 2} y={ty + th + 16} textAnchor="middle"
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.2 }}
+        style={{ fontFamily: MONO, fontSize: 9, fill: '#6060a060', letterSpacing: '0.08em' }}>
+        ✓  no impossible overlaps detected
+      </motion.text>
+    </motion.g>
+  )
+}
+
+// ─── Text panel ──────────────────────────────────────────────────────────────
+function TextPanel({ phase, phaseKey }) {
+  return (
+    <AnimatePresence mode="wait">
+      <motion.div key={phaseKey}
+        initial={{ opacity: 0, x: 16 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: -10 }}
+        transition={{ duration: 0.35 }}
+        style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 0 }}>
+
+        {/* Agent header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+          <div style={{
+            width: 52, height: 52, borderRadius: 14, flexShrink: 0,
+            background: '#0d0d1e', border: `1px solid ${phase.color}28`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 24, boxShadow: `0 0 20px ${phase.color}18`,
+          }}>
+            {phase.icon}
+          </div>
+          <div>
+            <div style={{ fontFamily: MONO, fontSize: 8, letterSpacing: '0.2em', color: phase.color + '99', textTransform: 'uppercase', marginBottom: 4 }}>
+              {phase.agentLabel}
+            </div>
+            <div style={{ fontFamily: PF, fontWeight: 700, fontSize: 16, color: 'var(--text)', lineHeight: 1.2 }}>
+              {phase.title}
+            </div>
+          </div>
+        </div>
+
+        {/* Terminal log */}
+        <div style={{
+          flex: 1, background: '#07071400',
+          borderRadius: 10, padding: '14px 16px',
+          border: '1px solid rgba(255,255,255,0.04)',
+          background: '#09091a',
+          overflow: 'hidden', position: 'relative',
+          minHeight: 200,
+        }}>
+          <div style={{ fontFamily: MONO, fontSize: 7.5, letterSpacing: '0.18em', color: '#30305a', textTransform: 'uppercase', marginBottom: 12 }}>
+            ◉ AGENT LOG
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {phase.logLines.map((line, i) => (
+              <motion.div key={i}
+                initial={{ opacity: 0, x: 8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: line.t / 1000, duration: 0.3 }}
+                style={{ display: 'flex', alignItems: 'flex-start', gap: 0 }}>
+                <span style={{ fontFamily: MONO, fontSize: 11.5, color: line.color, lineHeight: 1.6, whiteSpace: 'pre' }}>
+                  {line.text}
+                </span>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+
+        {/* Verdict */}
+        {phase.verdict && (
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ delay: 0.5, duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+            style={{
+              marginTop: 14,
+              background: phase.verdict.color + (phase.verdict.isFinal ? '18' : '10'),
+              border: `1.5px solid ${phase.verdict.color}${phase.verdict.isFinal ? 'cc' : '55'}`,
+              borderRadius: 10,
+              padding: phase.verdict.isFinal ? '16px 18px' : '12px 16px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+            }}>
+            <div>
+              <div style={{ fontFamily: MONO, fontSize: 7, letterSpacing: '0.18em', color: phase.verdict.color + '88', textTransform: 'uppercase', marginBottom: 5 }}>
+                {phase.verdict.isFinal ? 'Final Verdict' : 'Agent Verdict'}
+              </div>
+              <div style={{ fontFamily: MONO, fontSize: phase.verdict.isFinal ? 14 : 12, fontWeight: 700, color: phase.verdict.color, letterSpacing: '0.04em' }}>
+                {phase.verdict.label}
+              </div>
+            </div>
+            <div style={{ fontFamily: SF, fontSize: 11, color: phase.verdict.color + '80', textAlign: 'right', lineHeight: 1.7, flexShrink: 0, maxWidth: 120 }}>
+              {phase.verdict.note}
+            </div>
+          </motion.div>
+        )}
+      </motion.div>
+    </AnimatePresence>
+  )
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 export default function InvestigationDemo() {
   const [phaseIdx, setPhaseIdx] = useState(0)
-  const [paused,   setPaused]   = useState(false)
-  const [loopKey,  setLoopKey]  = useState(0)
+  const [paused, setPaused]     = useState(false)
+  const [loopKey, setLoopKey]   = useState(0)
   const timerRef = useRef(null)
 
-  const cfg   = PHASES[phaseIdx]
-  const isSynth = cfg.id === 'synthesis' || cfg.id === 'hold'
-  const pulses  = PHASE_PULSES[cfg.id] || []
+  const phase = PHASES[phaseIdx]
+  const isSynth = phase.id === 'synthesis'
+  const pulses = phase.pulses
 
+  // Auto-advance
   useEffect(() => {
     if (paused) return
     timerRef.current = setTimeout(() => {
@@ -367,239 +568,180 @@ export default function InvestigationDemo() {
         if (next === 0) setLoopKey(k => k + 1)
         return next
       })
-    }, cfg.dur)
+    }, phase.dur)
     return () => clearTimeout(timerRef.current)
-  }, [phaseIdx, paused, cfg.dur])
-
-  const displayPhases = PHASES.filter(p => p.id !== 'hold')
+  }, [phaseIdx, paused, phase.dur])
 
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
 
-      {/* ── Header ── */}
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <motion.div animate={{ opacity:[0.4,1,0.4] }} transition={{ duration:2, repeat:Infinity }}
-            style={{ width:7, height:7, borderRadius:'50%', background:cfg.color }} />
-          <span style={{ fontFamily:MONO, fontSize:9, letterSpacing:'0.2em', color:'#444466', textTransform:'uppercase' }}>
-            live investigation · PRV52019 · {cfg.agentLabel}
+      {/* ── Top bar ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, padding: '0 2px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <motion.div
+            animate={{ opacity: [0.35, 1, 0.35] }}
+            transition={{ duration: 2, repeat: Infinity }}
+            style={{ width: 8, height: 8, borderRadius: '50%', background: phase.color }} />
+          <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.2em', color: '#3a3a60', textTransform: 'uppercase' }}>
+            Live Investigation · PRV52019 · {phase.agentLabel}
           </span>
         </div>
-        <button onClick={() => setPaused(p => !p)}
-          style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:6, color:'#555577', cursor:'pointer', fontFamily:MONO, fontSize:10, padding:'5px 14px', letterSpacing:'0.1em' }}>
+        <button
+          onClick={() => setPaused(p => !p)}
+          style={{
+            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: 7, color: '#50507a', cursor: 'pointer',
+            fontFamily: MONO, fontSize: 10, padding: '5px 16px', letterSpacing: '0.1em',
+          }}>
           {paused ? '▶  play' : '⏸  pause'}
         </button>
       </div>
 
       {/* ── Two-panel body ── */}
-      <div style={{ display:'flex', gap:16, alignItems:'stretch' }}>
+      <div style={{ display: 'flex', gap: 20, alignItems: 'stretch', minHeight: 500 }}>
 
-        {/* LEFT — SVG graph */}
-        <div style={{ flex:'0 0 52%', background:'#07070f', borderRadius:12, overflow:'hidden', boxShadow:'inset 2px 2px 8px #03030a, inset -1px -1px 4px #0f0f1e' }}>
-          <svg viewBox="0 0 520 350" width="100%" style={{ display:'block' }}>
+        {/* LEFT — graph */}
+        <div style={{
+          flex: '0 0 60%',
+          background: '#06060f',
+          borderRadius: 14,
+          overflow: 'hidden',
+          boxShadow: 'inset 3px 3px 10px #02020a, inset -1px -1px 5px #0e0e1e',
+          border: '1px solid rgba(255,255,255,0.03)',
+          position: 'relative',
+        }}>
+          <svg viewBox="0 0 630 490" width="100%" style={{ display: 'block' }}>
             <defs>
-              <filter id="ig3glow" x="-60%" y="-60%" width="220%" height="220%">
-                <feGaussianBlur stdDeviation="4" result="b"/>
-                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              <filter id="idglow" x="-60%" y="-60%" width="220%" height="220%">
+                <feGaussianBlur stdDeviation="5" result="b" />
+                <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
-              <linearGradient id="swpg" x1="0" x2="1">
-                <stop offset="0%"   stopColor="#b080e000"/>
-                <stop offset="55%"  stopColor="#b080e020"/>
-                <stop offset="100%" stopColor="#b080e070"/>
-              </linearGradient>
             </defs>
 
             {/* Dot grid */}
-            {[...Array(11)].map((_,i) => [...Array(7)].map((__,j) => (
-              <circle key={`g${i}${j}`} cx={i*54} cy={j*58} r={0.7} fill="#ffffff07" />
+            {[...Array(12)].map((_, i) => [...Array(9)].map((__, j) => (
+              <circle key={`g${i}${j}`} cx={i * 58} cy={j * 62} r={0.7} fill="#ffffff06" />
             )))}
 
-            {/* ── Edges ── */}
-            {EDGE_DEFS.map((e, i) => {
-              const v = edgeVis(e, cfg)
+            {/* Edges */}
+            {EDGES.map((e, i) => {
+              const v = getEdgeStyle(e, phase)
               if (!v) return null
-              const { d } = qp(e.s, e.t, e.str ?? 28)
+              const { d } = qp(e.s, e.t, e.bow ?? 30)
               return (
-                <motion.path key={`${e.id}-${loopKey}`} d={d} fill="none"
+                <motion.path
+                  key={`${e.id}-${loopKey}`}
+                  d={d} fill="none"
                   initial={{ pathLength: 0 }}
-                  animate={{ pathLength:1, stroke:v.stroke, strokeWidth:v.w, strokeOpacity:v.op }}
+                  animate={{ pathLength: 1, stroke: v.stroke, strokeWidth: v.w, strokeOpacity: v.op }}
                   transition={{
-                    pathLength:   { duration:0.7, delay: i*0.08 },
-                    stroke:       { duration:0.45 },
-                    strokeWidth:  { duration:0.45 },
-                    strokeOpacity:{ duration:0.4 },
+                    pathLength: { duration: 0.7, delay: i * 0.07 },
+                    stroke: { duration: 0.4 },
+                    strokeWidth: { duration: 0.4 },
+                    strokeOpacity: { duration: 0.4 },
                   }}
                   strokeDasharray={v.dash ?? undefined}
                 />
               )
             })}
 
-            {/* ── Pulses ── */}
-            {pulses.map((p, i) => {
-              const s = N[p.s], t = N[p.t]
-              if (!s || !t) return null
-              const mx = (s.x+t.x)/2, my = (s.y+t.y)/2
-              const dx = mx-CX, dy = my-CY
-              const len = Math.sqrt(dx*dx+dy*dy) || 1
-              const str = (cfg.id === 'synthesis' || cfg.id === 'hold') ? 0 : 25
-              const cpx = mx + dx/len*str
-              const cpy = my + dy/len*str
-              return (
-                <Pulse key={`${p.s}${p.t}${i}-${phaseIdx}-${loopKey}`}
-                  sx={s.x} sy={s.y} tx={t.x} ty={t.y}
-                  cpx={cpx} cpy={cpy}
-                  delay={p.d} color={p.c || cfg.color}
-                  pkey={`${p.s}${p.t}${i}-${phaseIdx}-${loopKey}`}
-                />
-              )
-            })}
-
-            {/* ── Nodes ── */}
-            {Object.keys(N).map(id => (
-              <RenderNode key={id} id={id} vis={nodeVis(id, cfg)} isSynth={isSynth} />
+            {/* Pulses */}
+            {pulses.map((p, i) => (
+              <Pulse
+                key={`${p.s}${p.t}${i}-${phaseIdx}-${loopKey}`}
+                s={p.s} t={p.t}
+                delay={p.d} color={p.c || phase.color}
+                pkey={`${p.s}${p.t}${i}-${phaseIdx}-${loopKey}`}
+              />
             ))}
 
-            {/* ── Collusion ring labels ── */}
+            {/* Billing bar chart */}
+            <BillingChart show={phase.showBarChart} loopKey={`${phaseIdx}-${loopKey}`} />
+
+            {/* Timeline */}
+            <TimelineBar show={phase.showTimeline} loopKey={`${phaseIdx}-${loopKey}`} />
+
+            {/* Collusion ring labels */}
             <AnimatePresence>
-              {cfg.litAgents.includes('collusion') && (
+              {(phase.id === 'collusion' || phase.id === 'patient' || phase.id === 'temporal' || isSynth) && (
                 <motion.g key="rlabels"
-                  initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
-                  transition={{ delay:1.6, duration:0.4 }}>
-                  <text x={100} y={48} textAnchor="middle"
-                    style={{ fontFamily:MONO, fontSize:7, fill:'#e85d5d80' }}>ring · $26K</text>
-                  <text x={416} y={48} textAnchor="middle"
-                    style={{ fontFamily:MONO, fontSize:7, fill:'#e85d5d60' }}>ring · $48K</text>
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                  transition={{ delay: 1.4, duration: 0.4 }}>
+                  <text x={68} y={50} textAnchor="middle"
+                    style={{ fontFamily: MONO, fontSize: 7, fill: '#e85d5d70' }}>ring · $147K</text>
+                  <text x={554} y={50} textAnchor="middle"
+                    style={{ fontFamily: MONO, fontSize: 7, fill: '#e85d5d60' }}>ring · $66K</text>
                 </motion.g>
               )}
             </AnimatePresence>
 
-            {/* ── Temporal timeline ── */}
-            <AnimatePresence>
-              {cfg.id === 'temporal' && (
-                <motion.g key="tl"
-                  initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
-                  transition={{ duration:0.4 }}>
-                  <rect x={28} y={304} width={464} height={26} rx={5} fill="#0c0c18" stroke="#b080e020" strokeWidth={1}/>
-                  {[42,82,128,178,232,284,338,390,442,480].map((x,i) => (
-                    <rect key={i} x={x} y={306} width={3} height={22} rx={1.5} fill="#b080e050"/>
-                  ))}
-                  <motion.rect x={28} y={304} width={0} height={26} rx={5}
-                    animate={{ width:[0,464] }}
-                    transition={{ duration:2.2, delay:0.3, ease:'easeInOut' }}
-                    fill="url(#swpg)"/>
-                  <text x={34}  y={298} style={{ fontFamily:MONO, fontSize:7, fill:'#404068', letterSpacing:'0.04em' }}>JAN 2009</text>
-                  <text x={450} y={298} textAnchor="end" style={{ fontFamily:MONO, fontSize:7, fill:'#404068' }}>DEC 2009</text>
-                  <motion.text x={260} y={344} textAnchor="middle"
-                    initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:1.9 }}
-                    style={{ fontFamily:MONO, fontSize:9, fill:'#7070c080', letterSpacing:'0.06em' }}>
-                    ✓  no impossible overlaps detected
-                  </motion.text>
-                </motion.g>
-              )}
-            </AnimatePresence>
+            {/* Synthesis ripple */}
+            {isSynth && (
+              <motion.circle cx={CX} cy={CY} r={0} fill="none" stroke="#e8a83830" strokeWidth={2}
+                animate={{ r: [0, 100, 200], opacity: [0.6, 0.2, 0] }}
+                transition={{ duration: 1.5, delay: 0.3, ease: 'easeOut' }}
+              />
+            )}
 
+            {/* Nodes */}
+            {Object.keys(N).map(id => (
+              <NodeShape
+                key={id} id={id}
+                vis={getNodeStyle(id, phase)}
+                isSynth={isSynth}
+                loopKey={loopKey}
+              />
+            ))}
           </svg>
         </div>
 
-        {/* RIGHT — Explanation card */}
-        <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', minHeight:0 }}>
-          <AnimatePresence mode="wait">
-            <motion.div key={phaseIdx}
-              initial={{ opacity:0, x:14 }}
-              animate={{ opacity:1, x:0 }}
-              exit={{ opacity:0, x:-10 }}
-              transition={{ duration:0.32 }}
-              style={{ display:'flex', flexDirection:'column', gap:12, height:'100%' }}>
-
-              {/* Agent header */}
-              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                <div style={{ flexShrink:0, width:46, height:46, borderRadius:12, background:'#0e0e1c', border:`1px solid ${cfg.color}28`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, boxShadow:`0 0 18px ${cfg.color}18` }}>
-                  {cfg.icon}
-                </div>
-                <div>
-                  <div style={{ fontFamily:MONO, fontSize:8, letterSpacing:'0.2em', color:cfg.color+'99', textTransform:'uppercase', marginBottom:3 }}>
-                    {cfg.agentLabel}
-                  </div>
-                  <div style={{ fontFamily:PF, fontWeight:700, fontSize:14.5, color:'var(--text)', lineHeight:1.3 }}>
-                    {cfg.title}
-                  </div>
-                </div>
-              </div>
-
-              {/* What it does */}
-              <div style={{ background:'#0c0c1a', border:'1px solid rgba(255,255,255,0.045)', borderRadius:10, padding:'13px 15px' }}>
-                <div style={{ fontFamily:MONO, fontSize:7, letterSpacing:'0.2em', color:'#404060', textTransform:'uppercase', marginBottom:7 }}>
-                  How it works
-                </div>
-                <div style={{ fontFamily:SF, fontSize:12.5, color:'var(--muted)', lineHeight:1.75 }}>
-                  {cfg.what}
-                </div>
-              </div>
-
-              {/* Findings */}
-              <div style={{ background:'#0c0c1a', border:'1px solid rgba(255,255,255,0.045)', borderRadius:10, padding:'13px 15px', flex:1 }}>
-                <div style={{ fontFamily:MONO, fontSize:7, letterSpacing:'0.2em', color:'#404060', textTransform:'uppercase', marginBottom:10 }}>
-                  {cfg.id === 'formation' ? 'Data loaded' : 'Findings'}
-                </div>
-                <div style={{ display:'flex', flexDirection:'column', gap:9 }}>
-                  {cfg.findings.map((f, i) => (
-                    <motion.div key={i}
-                      initial={{ opacity:0, x:8 }}
-                      animate={{ opacity:1, x:0 }}
-                      transition={{ delay: i*0.14 + 0.18, duration:0.3 }}
-                      style={{ display:'flex', alignItems:'flex-start', gap:10 }}>
-                      <span style={{ fontFamily:MONO, fontSize:11, color: f.color || cfg.color, flexShrink:0, marginTop:1, minWidth:14 }}>
-                        {f.icon}
-                      </span>
-                      <span style={{ fontFamily:SF, fontSize:12.5, color: f.color ? 'var(--text)' : 'var(--muted)', lineHeight:1.5 }}>
-                        {f.text}
-                      </span>
-                    </motion.div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Verdict */}
-              {cfg.verdict && (
-                <motion.div
-                  initial={{ opacity:0, y:6 }}
-                  animate={{ opacity:1, y:0 }}
-                  transition={{ delay:0.45, duration:0.4 }}
-                  style={{ background: cfg.verdict.bg, border:`1.5px solid ${cfg.verdict.color}`, borderRadius:9, padding: cfg.verdict.isFinal ? '14px 16px' : '11px 15px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:10 }}>
-                  <div>
-                    <div style={{ fontFamily:MONO, fontSize:7, letterSpacing:'0.18em', color:cfg.verdict.color+'88', textTransform:'uppercase', marginBottom:4 }}>
-                      {cfg.verdict.isFinal ? 'Final verdict' : 'Agent verdict'}
-                    </div>
-                    <div style={{ fontFamily:MONO, fontSize: cfg.verdict.isFinal ? 13 : 11, fontWeight:700, color:cfg.verdict.color, letterSpacing:'0.05em' }}>
-                      {cfg.verdict.label}
-                    </div>
-                  </div>
-                  <div style={{ fontFamily:SF, fontSize:11, color:cfg.verdict.color+'80', textAlign:'right', lineHeight:1.7, flexShrink:0 }}>
-                    {cfg.verdict.note}
-                  </div>
-                </motion.div>
-              )}
-
-            </motion.div>
-          </AnimatePresence>
+        {/* RIGHT — text panel */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          <TextPanel phase={phase} phaseKey={`${phaseIdx}-${loopKey}`} />
         </div>
       </div>
 
+      {/* ── Progress dots ── */}
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, marginTop: 22, marginBottom: 14 }}>
+        {PHASE_DISPLAY.map((p, i) => {
+          const isCurr = phaseIdx === i
+          const isPast = phaseIdx > i
+          return (
+            <motion.button
+              key={p.id}
+              onClick={() => { setPhaseIdx(i); setPaused(false) }}
+              animate={{
+                width: isCurr ? 28 : 8,
+                background: isCurr ? p.color : isPast ? p.color + '55' : '#1e1e36',
+                boxShadow: isCurr ? `0 0 10px ${p.color}60` : 'none',
+              }}
+              transition={{ duration: 0.3 }}
+              style={{
+                height: 8, borderRadius: 4, border: 'none',
+                cursor: 'pointer', padding: 0, flexShrink: 0,
+              }}
+            />
+          )
+        })}
+      </div>
+
       {/* ── Phase pills ── */}
-      <div style={{ marginTop:18, display:'flex', gap:5, flexWrap:'wrap' }}>
-        {displayPhases.map((p, i) => {
-          const isCurr = phaseIdx === i || (p.id === 'synthesis' && cfg.id === 'hold')
-          const isPast = phaseIdx > i && !isCurr
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
+        {PHASE_DISPLAY.map((p, i) => {
+          const isCurr = phaseIdx === i
+          const isPast = phaseIdx > i
           return (
             <button key={p.id} onClick={() => { setPhaseIdx(i); setPaused(false) }}
               style={{
-                background: isCurr ? `${p.color}18` : 'none',
-                border: `1px solid ${isCurr ? p.color : isPast ? p.color+'55' : '#22223a'}`,
-                borderRadius: 20, color: isCurr ? p.color : isPast ? p.color+'80' : '#38384e',
-                cursor:'pointer', fontFamily:MONO, fontSize:8.5, letterSpacing:'0.1em',
-                padding:'4px 12px', transition:'all 0.2s',
+                background: isCurr ? `${p.color}14` : 'transparent',
+                border: `1px solid ${isCurr ? p.color : isPast ? p.color + '44' : '#1e1e38'}`,
+                borderRadius: 20, cursor: 'pointer',
+                fontFamily: MONO, fontSize: 9, letterSpacing: '0.1em',
+                color: isCurr ? p.color : isPast ? p.color + '70' : '#32324e',
+                padding: '5px 14px',
+                transition: 'all 0.2s',
               }}>
-              {p.agentN ? `${p.agentN}. ` : ''}{p.id === 'formation' ? 'GRAPH' : p.title.split(' ').slice(0,2).join(' ').toUpperCase()}
+              {p.agentN ? `${p.agentN}·` : ''}{p.id === 'formation' ? 'GRAPH' : p.title.split(' ').slice(0, 2).join(' ').toUpperCase()}
             </button>
           )
         })}
