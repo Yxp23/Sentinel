@@ -130,7 +130,7 @@ export default function DataInputScreen({ sampleData, onBegin, onBack }) {
       exit={{ opacity: 0 }}
       transition={{ duration: 0.6 }}
     >
-      <GraphBackground data={data} graphMode="idle" opacity={0.1} />
+      <GraphBackground data={sampleData} graphMode="idle" opacity={0.1} />
 
       <div style={{ position: 'relative', zIndex: 2, width: '100%', maxWidth: 820, padding: '0 24px' }}>
         {/* Header */}
