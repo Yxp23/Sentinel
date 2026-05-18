@@ -26,15 +26,40 @@ const AGENT_COLOR = {
   temporal: '#b080e0', synthesis: '#e8a838',
 }
 
-// bezier path bowing outward from graph center
-const qp = (sid, tid, bow = 30) => {
-  const s = N[sid], t = N[tid]
-  const mx = (s.x + t.x) / 2, my = (s.y + t.y) / 2
-  const dx = mx - CX, dy = my - CY
-  const len = Math.sqrt(dx * dx + dy * dy) || 1
-  const cpx = mx + dx / len * bow, cpy = my + dy / len * bow
-  return { d: `M${s.x},${s.y} Q${cpx},${cpy} ${t.x},${t.y}`, cpx, cpy }
+// Distance from node center to its boundary in direction `angle` (radians)
+function nodeOuterRadius(id, angle) {
+  const n = N[id]
+  const ca = Math.abs(Math.cos(angle))
+  const sa = Math.abs(Math.sin(angle))
+  const eps = 1e-6
+  if (n.type === 'provider')  { const hw = 64, hh = 28; return ca < eps ? hh : sa < eps ? hw : Math.min(hw / ca, hh / sa) }
+  if (n.type === 'claim')     { const hw = 42, hh = 18; return ca < eps ? hh : sa < eps ? hw : Math.min(hw / ca, hh / sa) }
+  if (n.type === 'physician') return 31
+  if (n.type === 'collude')   { const hw = 54, hh = 19; return ca < eps ? hh : sa < eps ? hw : Math.min(hw / ca, hh / sa) }
+  if (n.type === 'patient')   return 27
+  return 24
 }
+
+// Bezier path clipped to node boundaries — edges start/end at box edges, not centers
+const qpEdge = (sid, tid, bow = 30) => {
+  const s = N[sid], t = N[tid]
+  const dx = t.x - s.x, dy = t.y - s.y
+  const len = Math.sqrt(dx * dx + dy * dy) || 1
+  const angle = Math.atan2(dy, dx)
+  const gap = 6  // extra clearance beyond node boundary
+  const sr = nodeOuterRadius(sid, angle) + gap
+  const tr = nodeOuterRadius(tid, angle + Math.PI) + gap
+  const sx = s.x + (dx / len) * sr,  sy = s.y + (dy / len) * sr
+  const ex = t.x - (dx / len) * tr,  ey = t.y - (dy / len) * tr
+  const mx = (sx + ex) / 2, my = (sy + ey) / 2
+  const cdx = mx - CX, cdy = my - CY
+  const clen = Math.sqrt(cdx * cdx + cdy * cdy) || 1
+  const cpx = mx + (cdx / clen) * bow, cpy = my + (cdy / clen) * bow
+  return { d: `M${sx.toFixed(1)},${sy.toFixed(1)} Q${cpx.toFixed(1)},${cpy.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`, cpx, cpy, sx, sy, ex, ey }
+}
+
+// Keep qp as alias (used by Pulse — will be updated below)
+const qp = qpEdge
 
 const hexPts = (cx, cy, r) =>
   [...Array(6)].map((_, i) => {
@@ -59,123 +84,127 @@ const EDGES = [
 // ─── Phase data ──────────────────────────────────────────────────────────────
 const PHASES = [
   {
-    id: 'formation', dur: 3200, color: '#7878c0', agentN: null,
+    id: 'formation', dur: 7000, color: '#7878c0', agentN: null,
     icon: '🗺️', agentLabel: 'System', title: 'Building Knowledge Graph',
     activeEdges: 'all', activeNodes: 'all',
     showBarChart: false, showTimeline: false, showVerdict: false,
     logLines: [
-      { t: 300,  color: '#6060a0', text: '› Initializing knowledge graph engine...' },
-      { t: 700,  color: '#e0e0ff', text: '› Provider PRV52019 → node created' },
-      { t: 1100, color: '#e0e0ff', text: '› 1,961 claims → 3 representative nodes' },
-      { t: 1500, color: '#e0e0ff', text: '› 2 attending physicians → linked' },
-      { t: 1900, color: '#e0e0ff', text: '› 3 patient beneficiaries → indexed' },
-      { t: 2400, color: '#9090d8', text: '› Graph ready · 11 nodes · 10 edges' },
+      { t: 400,  color: '#6060a0', text: '› Initializing knowledge graph engine...' },
+      { t: 1200, color: '#e0e0ff', text: '› Provider PRV52019 → node created' },
+      { t: 2200, color: '#e0e0ff', text: '› 1,961 claims → 3 representative nodes' },
+      { t: 3200, color: '#e0e0ff', text: '› 2 attending physicians → linked' },
+      { t: 4200, color: '#e0e0ff', text: '› 3 patient beneficiaries → indexed' },
+      { t: 5500, color: '#9090d8', text: '› Graph ready · 11 nodes · 10 edges' },
     ],
     verdict: null,
     pulses: [],
   },
   {
-    id: 'billing', dur: 4500, color: '#e8a838', agentN: 1,
+    id: 'billing', dur: 9000, color: '#e8a838', agentN: 1,
     icon: '📊', agentLabel: 'Agent 1 of 5', title: 'Billing Volume Analysis',
     activeEdges: ['billing'], activeNodes: ['prv', 'clm1', 'clm2', 'clm3'],
     showBarChart: true, showTimeline: false, showVerdict: false,
     logLines: [
-      { t: 200,  color: '#6060a0', text: '› Walking Provider → Claim edges...' },
-      { t: 800,  color: '#e8a83888', text: '› Total claims: 1,961  ·  total billed: $5.99M' },
-      { t: 1400, color: '#e8a838',   text: '› claims_ratio = 5.90×  (peer avg = 1.00×)' },
-      { t: 2100, color: '#e8a838',   text: '› amount_ratio = 14.90×  (threshold = 3.00×)' },
-      { t: 2800, color: '#e0e0ff',   text: '› Avg $3,057/claim vs peer avg $402/claim' },
-      { t: 3400, color: '#e8a838',   text: '⚑ ANOMALY — both ratios exceed 3× threshold' },
+      { t: 300,  color: '#6060a0', text: '› Walking Provider → Claim edges...' },
+      { t: 1400, color: '#e8a83888', text: '› Total claims: 1,961  ·  total billed: $5.99M' },
+      { t: 2800, color: '#e8a838',   text: '› claims_ratio = 5.90×  (peer avg = 1.00×)' },
+      { t: 4400, color: '#e8a838',   text: '› amount_ratio = 14.90×  (threshold = 3.00×)' },
+      { t: 6000, color: '#e0e0ff',   text: '› Avg $3,057/claim vs peer avg $402/claim' },
+      { t: 7500, color: '#e8a838',   text: '⚑ ANOMALY — both ratios exceed 3× threshold' },
     ],
     verdict: { label: 'HIGH RISK', note: 'Both ratios far exceed 3× peer threshold', color: '#e8a838' },
     pulses: [
-      { s: 'prv', t: 'clm1', d: 0.3, c: '#e8a838' },
-      { s: 'prv', t: 'clm2', d: 1.0, c: '#e8a838' },
-      { s: 'prv', t: 'clm3', d: 1.7, c: '#e8a838' },
-      { s: 'prv', t: 'clm1', d: 2.8, c: '#e8a838' },
-      { s: 'prv', t: 'clm2', d: 3.5, c: '#e8a838' },
+      { s: 'prv', t: 'clm1', d: 0.4, c: '#e8a838' },
+      { s: 'prv', t: 'clm2', d: 1.4, c: '#e8a838' },
+      { s: 'prv', t: 'clm3', d: 2.4, c: '#e8a838' },
+      { s: 'prv', t: 'clm1', d: 4.0, c: '#e8a838' },
+      { s: 'prv', t: 'clm2', d: 5.2, c: '#e8a838' },
+      { s: 'prv', t: 'clm3', d: 6.5, c: '#e8a838' },
     ],
   },
   {
-    id: 'collusion', dur: 4500, color: '#e85d5d', agentN: 2,
+    id: 'collusion', dur: 9000, color: '#e85d5d', agentN: 2,
     icon: '🕸️', agentLabel: 'Agent 2 of 5', title: 'Collusion Network Analysis',
     activeEdges: ['billing', 'collusion'], activeNodes: ['prv', 'clm1', 'clm2', 'clm3', 'phy1', 'phy2', 'col1', 'col2'],
     showBarChart: false, showTimeline: false, showVerdict: false,
     logLines: [
-      { t: 200,  color: '#6060a0', text: '› Walking Provider → Claim → Physician edges...' },
-      { t: 900,  color: '#e0e0ff', text: '› Mapping physician-to-provider adjacency...' },
-      { t: 1600, color: '#e85d5d', text: '› PHY347413 links PRV52019 ↔ PRV52119' },
-      { t: 2200, color: '#e85d5d', text: '› PHY347413 total ring flow: $147,300 (6.0× avg)' },
-      { t: 2900, color: '#e85d5d', text: '› PHY393952 links PRV52019 ↔ PRV52065' },
-      { t: 3500, color: '#e85d5d', text: '⚑ RING DETECTED — 2 shared physicians found' },
+      { t: 300,  color: '#6060a0', text: '› Walking Provider → Claim → Physician edges...' },
+      { t: 1600, color: '#e0e0ff', text: '› Mapping physician-to-provider adjacency...' },
+      { t: 3000, color: '#e85d5d', text: '› PHY347413 links PRV52019 ↔ PRV52119' },
+      { t: 4400, color: '#e85d5d', text: '› PHY347413 ring flow: $147,300 (6.0× avg)' },
+      { t: 5800, color: '#e85d5d', text: '› PHY393952 links PRV52019 ↔ PRV52065' },
+      { t: 7500, color: '#e85d5d', text: '⚑ RING DETECTED — 2 shared physicians found' },
     ],
     verdict: { label: 'MEDIUM RISK', note: '2 collusion rings · $213K total flow', color: '#e85d5d' },
     pulses: [
-      { s: 'prv',  t: 'phy1', d: 0.3, c: '#e85d5d' },
-      { s: 'phy1', t: 'col1', d: 1.1, c: '#e85d5d' },
-      { s: 'prv',  t: 'phy2', d: 1.6, c: '#e85d5d' },
-      { s: 'phy2', t: 'col2', d: 2.4, c: '#e85d5d' },
-      { s: 'prv',  t: 'phy1', d: 3.1, c: '#e85d5d' },
+      { s: 'prv',  t: 'phy1', d: 0.4, c: '#e85d5d' },
+      { s: 'phy1', t: 'col1', d: 1.5, c: '#e85d5d' },
+      { s: 'prv',  t: 'phy2', d: 2.5, c: '#e85d5d' },
+      { s: 'phy2', t: 'col2', d: 3.6, c: '#e85d5d' },
+      { s: 'prv',  t: 'phy1', d: 5.0, c: '#e85d5d' },
+      { s: 'phy1', t: 'col1', d: 6.2, c: '#e85d5d' },
     ],
   },
   {
-    id: 'patient', dur: 4500, color: '#38b2ac', agentN: 3,
+    id: 'patient', dur: 9000, color: '#38b2ac', agentN: 3,
     icon: '🏥', agentLabel: 'Agent 3 of 5', title: 'Patient Pattern Analysis',
     activeEdges: ['billing', 'collusion', 'patient'], activeNodes: 'all',
     showBarChart: false, showTimeline: false, showVerdict: false,
     logLines: [
-      { t: 200,  color: '#6060a0', text: '› Walking Patient → Claim → Provider edges...' },
-      { t: 900,  color: '#e0e0ff', text: '› Checking multi-provider billing patterns...' },
-      { t: 1600, color: '#38b2ac', text: '› BENE20205 billed by 2 providers · $46K total' },
-      { t: 2300, color: '#38b2ac', text: '› BENE15144 billed by 2 providers · $29K total' },
-      { t: 3000, color: '#e0e0ff', text: '› Checking post-death claims... none found' },
-      { t: 3600, color: '#38b2ac', text: '⚑ OVERLAP — 2 patients flagged HIGH risk' },
+      { t: 300,  color: '#6060a0', text: '› Walking Patient → Claim → Provider edges...' },
+      { t: 1600, color: '#e0e0ff', text: '› Checking multi-provider billing patterns...' },
+      { t: 3000, color: '#38b2ac', text: '› BENE20205 billed by 2 providers · $46K total' },
+      { t: 4400, color: '#38b2ac', text: '› BENE15144 billed by 2 providers · $29K total' },
+      { t: 5800, color: '#e0e0ff', text: '› Checking post-death claims... none found' },
+      { t: 7500, color: '#38b2ac', text: '⚑ OVERLAP — 2 patients flagged HIGH risk' },
     ],
     verdict: { label: 'HIGH RISK', note: 'Patients shared across fraud ring', color: '#38b2ac' },
     pulses: [
-      { s: 'pat1', t: 'prv', d: 0.3, c: '#38b2ac' },
-      { s: 'pat2', t: 'prv', d: 1.1, c: '#38b2ac' },
-      { s: 'pat3', t: 'prv', d: 1.9, c: '#38b2ac' },
-      { s: 'pat1', t: 'prv', d: 2.9, c: '#38b2ac' },
+      { s: 'pat1', t: 'prv', d: 0.4, c: '#38b2ac' },
+      { s: 'pat2', t: 'prv', d: 1.6, c: '#38b2ac' },
+      { s: 'pat3', t: 'prv', d: 2.8, c: '#38b2ac' },
+      { s: 'pat1', t: 'prv', d: 4.4, c: '#38b2ac' },
+      { s: 'pat2', t: 'prv', d: 5.8, c: '#38b2ac' },
     ],
   },
   {
-    id: 'temporal', dur: 3500, color: '#b080e0', agentN: 4,
+    id: 'temporal', dur: 7500, color: '#b080e0', agentN: 4,
     icon: '⏱️', agentLabel: 'Agent 4 of 5', title: 'Temporal Anomaly Analysis',
     activeEdges: ['billing', 'collusion', 'patient'], activeNodes: 'all',
     showBarChart: false, showTimeline: true, showVerdict: false,
     logLines: [
-      { t: 200,  color: '#6060a0', text: '› Scanning all 1,961 claim timestamps...' },
-      { t: 800,  color: '#e0e0ff', text: '› Checking for overlapping inpatient stays...' },
-      { t: 1500, color: '#7070c0', text: '› ✓ No concurrent admissions detected' },
-      { t: 2100, color: '#7070c0', text: '› ✓ No post-death claim submissions' },
-      { t: 2700, color: '#7070c0', text: '› ✓ No 7-day fabrication burst patterns' },
-      { t: 3200, color: '#9090d8', text: '✓ CLEAN — timeline appears legitimate' },
+      { t: 300,  color: '#6060a0', text: '› Scanning all 1,961 claim timestamps...' },
+      { t: 1500, color: '#e0e0ff', text: '› Checking for overlapping inpatient stays...' },
+      { t: 2800, color: '#7070c0', text: '› ✓ No concurrent admissions detected' },
+      { t: 4000, color: '#7070c0', text: '› ✓ No post-death claim submissions' },
+      { t: 5200, color: '#7070c0', text: '› ✓ No 7-day fabrication burst patterns' },
+      { t: 6500, color: '#9090d8', text: '✓ CLEAN — timeline appears legitimate' },
     ],
     verdict: { label: 'CLEAN', note: 'No timeline anomalies found', color: '#7070c0' },
     pulses: [],
   },
   {
-    id: 'synthesis', dur: 3800, color: '#e8a838', agentN: 5,
+    id: 'synthesis', dur: 10000, color: '#e8a838', agentN: 5,
     icon: '⚖️', agentLabel: 'Agent 5 of 5', title: 'Synthesis Engine',
     activeEdges: 'all', activeNodes: 'all',
     showBarChart: false, showTimeline: false, showVerdict: true,
     logLines: [
-      { t: 200,  color: '#6060a0', text: '› Collecting all 4 agent findings...' },
-      { t: 700,  color: '#e8a838', text: '› Billing Agent:   HIGH  · 5.9× / 14.9× ratios' },
-      { t: 1200, color: '#e85d5d', text: '› Collusion Agent: MEDIUM · 2 rings · $213K' },
-      { t: 1700, color: '#38b2ac', text: '› Patient Agent:   HIGH  · 2 patients flagged' },
-      { t: 2200, color: '#7070c0', text: '› Temporal Agent:  CLEAN · no anomalies' },
-      { t: 2800, color: '#e8a838', text: '⚑ VERDICT — 3 agents corroborated → HIGH RISK' },
+      { t: 300,  color: '#6060a0', text: '› Collecting all 4 agent findings...' },
+      { t: 1600, color: '#e8a838', text: '› Billing Agent:   HIGH  · 5.9× / 14.9× ratios' },
+      { t: 3000, color: '#e85d5d', text: '› Collusion Agent: MEDIUM · 2 rings · $213K' },
+      { t: 4400, color: '#38b2ac', text: '› Patient Agent:   HIGH  · 2 patients flagged' },
+      { t: 5800, color: '#7070c0', text: '› Temporal Agent:  CLEAN · no anomalies' },
+      { t: 7500, color: '#e8a838', text: '⚑ VERDICT — 3 agents corroborated → HIGH RISK' },
     ],
     verdict: { label: '⚑  HIGH RISK · $5.99M', note: '3 of 4 agents corroborated', color: '#e8a838', isFinal: true },
     pulses: [
-      { s: 'clm2', t: 'prv',  d: 0.2, c: '#e8a838' },
-      { s: 'phy1', t: 'prv',  d: 0.7, c: '#e85d5d' },
-      { s: 'pat2', t: 'prv',  d: 1.2, c: '#38b2ac' },
-      { s: 'clm1', t: 'prv',  d: 1.9, c: '#e8a838' },
-      { s: 'phy2', t: 'prv',  d: 2.4, c: '#e85d5d' },
-      { s: 'pat1', t: 'prv',  d: 2.9, c: '#38b2ac' },
+      { s: 'clm2', t: 'prv',  d: 0.4, c: '#e8a838' },
+      { s: 'phy1', t: 'prv',  d: 1.2, c: '#e85d5d' },
+      { s: 'pat2', t: 'prv',  d: 2.0, c: '#38b2ac' },
+      { s: 'clm1', t: 'prv',  d: 3.2, c: '#e8a838' },
+      { s: 'phy2', t: 'prv',  d: 4.0, c: '#e85d5d' },
+      { s: 'pat1', t: 'prv',  d: 5.0, c: '#38b2ac' },
+      { s: 'clm3', t: 'prv',  d: 6.2, c: '#e8a838' },
     ],
   },
 ]
@@ -258,13 +287,13 @@ function getNodeStyle(id, phase) {
 function Pulse({ s, t, delay, color, pkey }) {
   const sn = N[s], tn = N[t]
   if (!sn || !tn) return null
-  const { cpx, cpy } = qp(s, t, 28)
-  // Animate along quadratic bezier via t parameter
-  const steps = 20
+  const { cpx, cpy, sx, sy, ex, ey } = qpEdge(s, t, 28)
+  // Animate along clipped quadratic bezier
+  const steps = 24
   const pts = [...Array(steps + 1)].map((_, i) => {
     const u = i / steps
-    const x = (1-u)*(1-u)*sn.x + 2*(1-u)*u*cpx + u*u*tn.x
-    const y = (1-u)*(1-u)*sn.y + 2*(1-u)*u*cpy + u*u*tn.y
+    const x = (1-u)*(1-u)*sx + 2*(1-u)*u*cpx + u*u*ex
+    const y = (1-u)*(1-u)*sy + 2*(1-u)*u*cpy + u*u*ey
     return [x, y]
   })
   return (
@@ -313,10 +342,10 @@ function NodeShape({ id, vis, isSynth, loopKey }) {
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.8, duration: 0.5 }}>
-          <rect x={n.x - 64} y={n.y - 62} width={128} height={26} rx={6}
+          <rect x={n.x - 78} y={n.y - 92} width={156} height={26} rx={6}
             fill="#e8a83822" stroke="#e8a838" strokeWidth={1.5} />
-          <text x={n.x} y={n.y - 44} textAnchor="middle"
-            style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, fill: '#e8a838', letterSpacing: '0.06em', pointerEvents: 'none' }}>
+          <text x={n.x} y={n.y - 74} textAnchor="middle"
+            style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, fill: '#e8a838', letterSpacing: '0.05em', pointerEvents: 'none' }}>
             ⚑ HIGH RISK · $5.99M
           </text>
         </motion.g>
@@ -384,12 +413,12 @@ function NodeShape({ id, vis, isSynth, loopKey }) {
 // ─── Billing bar chart overlay ───────────────────────────────────────────────
 function BillingChart({ show, loopKey }) {
   if (!show) return null
-  const bx = 148, by = 168, bw = 138, bh = 80
+  const bx = 18, by = 188, bw = 148, bh = 92
   const maxBar = 98
   return (
     <motion.g key={`bc-${loopKey}`}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-      transition={{ delay: 1.2, duration: 0.5 }}>
+      transition={{ delay: 2.0, duration: 0.7 }}>
       <rect x={bx} y={by} width={bw} height={bh} rx={7}
         fill="#0b0b19" stroke="#e8a83822" strokeWidth={1} />
       <text x={bx + 9} y={by + 14}
@@ -400,8 +429,8 @@ function BillingChart({ show, loopKey }) {
       <rect x={bx + 9} y={by + 33} width={maxBar} height={8} rx={3} fill="#1a1a2e" />
       <motion.rect x={bx + 9} y={by + 33} width={0} height={8} rx={3} fill="#e8a838"
         animate={{ width: maxBar * (5.9 / 15) }}
-        transition={{ delay: 1.6, duration: 0.9, ease: 'easeOut' }} />
-      <motion.text x={bx + 9 + maxBar * (5.9 / 15) + 4} y={by + 40} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.5 }}
+        transition={{ delay: 2.6, duration: 1.1, ease: 'easeOut' }} />
+      <motion.text x={bx + 9 + maxBar * (5.9 / 15) + 4} y={by + 40} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 3.8 }}
         style={{ fontFamily: MONO, fontSize: 8, fontWeight: 700, fill: '#e8a838' }}>5.9×</motion.text>
 
       {/* Amount bar */}
@@ -409,15 +438,15 @@ function BillingChart({ show, loopKey }) {
       <rect x={bx + 9} y={by + 60} width={maxBar} height={8} rx={3} fill="#1a1a2e" />
       <motion.rect x={bx + 9} y={by + 60} width={0} height={8} rx={3} fill="#e8a838cc"
         animate={{ width: maxBar }}
-        transition={{ delay: 1.8, duration: 1.1, ease: 'easeOut' }} />
-      <motion.text x={bx + 9 + maxBar + 4} y={by + 68} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.9 }}
+        transition={{ delay: 3.0, duration: 1.3, ease: 'easeOut' }} />
+      <motion.text x={bx + 9 + maxBar + 4} y={by + 68} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 4.4 }}
         style={{ fontFamily: MONO, fontSize: 8, fontWeight: 700, fill: '#e8a838' }}>14.9×</motion.text>
 
       {/* Peer line */}
       <motion.line x1={bx + 9 + maxBar * (1 / 15)} y1={by + 33} x2={bx + 9 + maxBar * (1 / 15)} y2={by + 68 + 4}
         stroke="#ffffff25" strokeWidth={1} strokeDasharray="2,2"
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.0 }} />
-      <motion.text x={bx + 9 + maxBar * (1 / 15) + 2} y={by + 78} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.2 }}
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.8 }} />
+      <motion.text x={bx + 9 + maxBar * (1 / 15) + 2} y={by + 78} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 3.0 }}
         style={{ fontFamily: MONO, fontSize: 6.5, fill: '#454560' }}>peer avg</motion.text>
     </motion.g>
   )
@@ -553,24 +582,40 @@ export default function InvestigationDemo() {
   const [phaseIdx, setPhaseIdx] = useState(0)
   const [paused, setPaused]     = useState(false)
   const [loopKey, setLoopKey]   = useState(0)
-  const timerRef = useRef(null)
+  const timerRef    = useRef(null)
+  const startRef    = useRef(Date.now())   // when current phase timer last started
+  const remainRef   = useRef(PHASES[0].dur) // remaining ms for current phase
 
   const phase = PHASES[phaseIdx]
   const isSynth = phase.id === 'synthesis'
   const pulses = phase.pulses
 
-  // Auto-advance
+  const advance = () => {
+    setPhaseIdx(p => {
+      const next = (p + 1) % PHASES.length
+      if (next === 0) setLoopKey(k => k + 1)
+      return next
+    })
+  }
+
+  // Reset remaining time whenever the phase changes
   useEffect(() => {
-    if (paused) return
-    timerRef.current = setTimeout(() => {
-      setPhaseIdx(p => {
-        const next = (p + 1) % PHASES.length
-        if (next === 0) setLoopKey(k => k + 1)
-        return next
-      })
-    }, phase.dur)
+    remainRef.current = phase.dur
+  }, [phaseIdx, phase.dur])
+
+  // Start/stop/resume timer based on paused state and phase
+  useEffect(() => {
+    clearTimeout(timerRef.current)
+    if (paused) {
+      // Record how much time is left so resume is accurate
+      const elapsed = Date.now() - startRef.current
+      remainRef.current = Math.max(300, phase.dur - elapsed)
+      return
+    }
+    startRef.current = Date.now()
+    timerRef.current = setTimeout(advance, remainRef.current)
     return () => clearTimeout(timerRef.current)
-  }, [phaseIdx, paused, phase.dur])
+  }, [phaseIdx, paused])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -627,7 +672,7 @@ export default function InvestigationDemo() {
             {EDGES.map((e, i) => {
               const v = getEdgeStyle(e, phase)
               if (!v) return null
-              const { d } = qp(e.s, e.t, e.bow ?? 30)
+              const { d } = qpEdge(e.s, e.t, e.bow ?? 30)
               return (
                 <motion.path
                   key={`${e.id}-${loopKey}`}

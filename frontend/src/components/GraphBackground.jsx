@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as d3 from 'd3'
 
 // Force-directed graph using actual results.json data
@@ -9,6 +9,7 @@ export default function GraphBackground({ data, graphMode = 'idle', highlightPro
   const simRef = useRef(null)
   const nodesRef = useRef([])
   const linksRef = useRef([])
+  const [tooltip, setTooltip] = useState(null)
 
   useEffect(() => {
     if (!data || !svgRef.current) return
@@ -40,41 +41,26 @@ export default function GraphBackground({ data, graphMode = 'idle', highlightPro
       nodeMap[cf.provider_id] = n
     })
 
-    // Also add non-case-file providers (to fill out the graph)
-    Object.entries(data.providers_meta || {}).forEach(([pid, pm]) => {
-      if (!nodeMap[pid]) {
-        const n = {
-          id: pid,
-          type: 'provider',
-          risk: 'LOW',
-          fraud: pm.fraud_label === true || pm.fraud_label === 'Yes',
-          x: W * 0.1 + Math.random() * W * 0.8,
-          y: H * 0.1 + Math.random() * H * 0.8,
-        }
-        nodes.push(n)
-        nodeMap[pid] = n
-      }
-    })
-
-    // Physician nodes from collusion rings
+    // Physician nodes from collusion findings
     const physMap = {}
-    ;(data.collusion_rings || []).forEach(ring => {
-      if (ring.physician_id === 'NA') return
-      if (!physMap[ring.physician_id]) {
-        const n = {
-          id: ring.physician_id,
-          type: 'physician',
-          x: W * 0.2 + Math.random() * W * 0.6,
-          y: H * 0.2 + Math.random() * H * 0.6,
-        }
-        nodes.push(n)
-        physMap[ring.physician_id] = n
-      }
-      ring.connected_providers.forEach(pid => {
-        const src = physMap[ring.physician_id]
-        const tgt = nodeMap[pid]
-        if (src && tgt) {
-          links.push({ source: src.id, target: tgt.id, type: 'collusion' })
+    ;(data.case_files || []).forEach(cf => {
+      ;(cf.collusion_findings || []).forEach(finding => {
+        const match = finding.match(/physician=(PHY\d+)/)
+        if (match) {
+          const physId = match[1]
+          if (!physMap[physId]) {
+            const n = {
+              id: physId,
+              type: 'physician',
+              x: W * 0.2 + Math.random() * W * 0.6,
+              y: H * 0.2 + Math.random() * H * 0.6,
+            }
+            nodes.push(n)
+            physMap[physId] = n
+          }
+          if (nodeMap[cf.provider_id]) {
+            links.push({ source: physId, target: cf.provider_id, type: 'collusion' })
+          }
         }
       })
     })
@@ -124,29 +110,12 @@ export default function GraphBackground({ data, graphMode = 'idle', highlightPro
       .selectAll('line')
       .data(links)
       .join('line')
-      .attr('stroke', d => d.type === 'collusion' ? 'rgba(232,93,93,0.5)' : 'rgba(160,160,200,0.15)')
-      .attr('stroke-width', d => d.type === 'collusion' ? 1 : 0.5)
 
     // Node layer
     const nodeSel = svg.append('g').attr('class', 'nodes')
       .selectAll('circle')
       .data(nodes)
       .join('circle')
-      .attr('r', d => {
-        if (d.type === 'provider') return d.risk === 'HIGH' ? 8 : 5
-        if (d.type === 'physician') return 5
-        return 3
-      })
-      .attr('fill', d => {
-        if (d.type === 'provider') {
-          if (d.risk === 'HIGH') return 'rgba(232,168,56,0.9)'
-          if (d.risk === 'MEDIUM') return 'rgba(56,178,172,0.7)'
-          return 'rgba(160,160,200,0.4)'
-        }
-        if (d.type === 'physician') return 'rgba(56,178,172,0.6)'
-        return 'rgba(130,130,170,0.35)'
-      })
-      .attr('filter', d => d.risk === 'HIGH' ? 'url(#glow)' : null)
 
     // Force simulation
     const sim = d3.forceSimulation(nodes)
@@ -156,7 +125,10 @@ export default function GraphBackground({ data, graphMode = 'idle', highlightPro
       .force('collision', d3.forceCollide(20))
       .alphaDecay(0.015)
       .velocityDecay(0.7)
-      .on('tick', () => {
+    // Pre-calculate ticks to skip the initial "explosion" visual glitch
+    sim.tick(40)
+
+    sim.on('tick', () => {
         linkSel
           .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
           .attr('x2', d => d.target.x).attr('y2', d => d.target.y)
@@ -198,23 +170,23 @@ export default function GraphBackground({ data, graphMode = 'idle', highlightPro
     if (graphMode === 'billing') {
       linkSel.attr('stroke', 'rgba(160,160,200,0.08)').attr('stroke-width', 0.5)
       nodeSel.attr('fill', d => d.type === 'provider' ? 'rgba(232,168,56,0.9)' : 'rgba(130,130,170,0.2)')
-             .attr('filter', d => d.type === 'provider' ? 'url(#glow)' : null)
+             .attr('r', d => d.type === 'provider' ? 6 : 2.5)
     } else if (graphMode === 'collusion') {
       linkSel
         .attr('stroke', d => d.type === 'collusion' ? 'rgba(56,178,172,0.8)' : 'rgba(160,160,200,0.05)')
         .attr('stroke-width', d => d.type === 'collusion' ? 2.5 : 0.3)
       nodeSel.attr('fill', d => d.type === 'physician' ? 'rgba(56,178,172,1)' : d.type === 'provider' ? 'rgba(232,168,56,0.5)' : 'rgba(130,130,170,0.15)')
-             .attr('filter', d => d.type === 'physician' ? 'url(#glow)' : null)
+             .attr('r', d => d.type === 'physician' ? 8 : d.type === 'provider' ? 5 : 2.5)
     } else if (graphMode === 'patient') {
       linkSel.attr('stroke', d => d.type === 'patient' ? 'rgba(232,93,93,0.6)' : 'rgba(160,160,200,0.05)').attr('stroke-width', d => d.type === 'patient' ? 1.5 : 0.3)
       nodeSel.attr('fill', d => d.type === 'patient' ? 'rgba(232,93,93,0.8)' : d.type === 'provider' ? 'rgba(232,168,56,0.4)' : 'rgba(130,130,170,0.2)')
-             .attr('filter', d => d.type === 'patient' ? 'url(#glow)' : null)
+             .attr('r', d => d.type === 'patient' ? 5 : d.type === 'provider' ? 5 : 2.5)
     } else if (graphMode === 'temporal') {
       linkSel.attr('stroke', 'rgba(176,128,224,0.7)').attr('stroke-width', 1.5)
       nodeSel.attr('fill', d => {
         if (d.type === 'provider' && d.risk === 'HIGH') return 'rgba(176,128,224,0.9)'
         return 'rgba(130,130,170,0.2)'
-      }).attr('filter', d => d.risk === 'HIGH' ? 'url(#glow)' : null)
+      }).attr('r', d => (d.type === 'provider' && d.risk === 'HIGH') ? 8 : 2.5)
     } else if (graphMode === 'synthesis') {
       linkSel.attr('stroke', 'rgba(232,168,56,0.5)').attr('stroke-width', 1.5)
       nodeSel.attr('fill', d => {
@@ -225,7 +197,7 @@ export default function GraphBackground({ data, graphMode = 'idle', highlightPro
         }
         if (d.type === 'physician') return 'rgba(56,178,172,0.7)'
         return 'rgba(232,93,93,0.5)'
-      }).attr('filter', d => d.risk === 'HIGH' ? 'url(#glow-strong)' : null)
+      }).attr('r', d => d.type === 'provider' && d.risk === 'HIGH' ? 8 : 4)
     } else if (graphMode === 'investigation' && highlightProvider) {
       linkSel.attr('stroke', d => {
         const src = d.source?.id || d.source
@@ -253,37 +225,123 @@ export default function GraphBackground({ data, graphMode = 'idle', highlightPro
         if (d.id === highlightProvider) return 12
         if (d.type === 'provider') return d.risk === 'HIGH' ? 6 : 4
         return d.type === 'physician' ? 5 : 2.5
-      }).attr('filter', d => d.id === highlightProvider ? 'url(#glow-strong)' : null)
+      })
+    } else if (graphMode === 'xray') {
+      linkSel.attr('stroke', d => {
+        if (d.type === 'collusion') return 'rgba(232,93,93,0.9)'
+        if (d.type === 'patient') return 'rgba(232,93,93,0.2)'
+        return 'rgba(160,160,200,0.08)'
+      }).attr('stroke-width', d => d.type === 'collusion' ? 3 : 0.5)
+      
+      nodeSel.attr('fill', d => {
+        if (d.type === 'physician') return 'rgba(232,93,93,1)'
+        if (d.type === 'provider') return d.risk === 'HIGH' ? 'rgba(232,168,56,0.9)' : 'rgba(100,100,130,0.3)'
+        return 'rgba(130,130,170,0.2)'
+      }).attr('r', d => {
+        if (d.type === 'physician') return 8
+        if (d.type === 'provider') return d.risk === 'HIGH' ? 10 : 4
+        return 2.5
+      })
     } else {
       // idle / reset
       linkSel
         .attr('stroke', d => d.type === 'collusion' ? 'rgba(232,93,93,0.4)' : 'rgba(160,160,200,0.12)')
         .attr('stroke-width', d => d.type === 'collusion' ? 1 : 0.5)
       nodeSel
-        .attr('r', d => d.type === 'provider' ? (d.risk === 'HIGH' ? 8 : 5) : d.type === 'physician' ? 5 : 3)
+        .attr('r', d => d.type === 'provider' ? (d.risk === 'HIGH' ? 6 : 4) : d.type === 'physician' ? 4 : 2)
         .attr('fill', d => {
           if (d.type === 'provider') {
-            if (d.risk === 'HIGH') return 'rgba(232,168,56,0.9)'
-            if (d.risk === 'MEDIUM') return 'rgba(56,178,172,0.7)'
-            return 'rgba(160,160,200,0.4)'
+            if (d.risk === 'HIGH') return 'rgba(232,168,56,0.8)'
+            if (d.risk === 'MEDIUM') return 'rgba(56,178,172,0.6)'
+            return 'rgba(160,160,200,0.3)'
           }
-          if (d.type === 'physician') return 'rgba(56,178,172,0.6)'
-          return 'rgba(130,130,170,0.35)'
+          if (d.type === 'physician') return 'rgba(56,178,172,0.5)'
+          return 'rgba(130,130,170,0.25)'
         })
-        .attr('filter', d => d.risk === 'HIGH' ? 'url(#glow)' : null)
     }
+
+    // Interactivity for X-Ray mode
+    if (graphMode === 'xray') {
+      nodeSel
+        .style('cursor', 'crosshair')
+        .on('mouseover', (event, d) => {
+          // Dim non-connected
+          nodeSel.attr('opacity', n => {
+            if (n.id === d.id) return 1
+            const isConnected = linksRef.current.some(l => 
+              (l.source.id === d.id && l.target.id === n.id) || 
+              (l.target.id === d.id && l.source.id === n.id)
+            )
+            return isConnected ? 1 : 0.1
+          })
+          linkSel.attr('opacity', l => (l.source.id === d.id || l.target.id === d.id) ? 1 : 0.05)
+
+          setTooltip({ x: event.clientX, y: event.clientY, data: d })
+        })
+        .on('mouseout', () => {
+          nodeSel.attr('opacity', 1)
+          linkSel.attr('opacity', 1)
+          setTooltip(null)
+        })
+    } else {
+      nodeSel.style('cursor', 'default').on('mouseover', null).on('mouseout', null)
+      nodeSel.attr('opacity', 1)
+      linkSel.attr('opacity', 1)
+    }
+
   }, [graphMode, highlightProvider])
 
   return (
-    <svg
-      ref={svgRef}
-      style={{
-        position: 'fixed', inset: 0,
-        width: '100vw', height: '100vh',
-        opacity,
-        pointerEvents: 'none',
-        zIndex: 0,
-      }}
-    />
+    <>
+      <svg
+        ref={svgRef}
+        style={{
+          position: 'fixed', inset: 0,
+          width: '100vw', height: '100vh',
+          opacity,
+          pointerEvents: graphMode === 'xray' ? 'auto' : 'none',
+          zIndex: 0,
+        }}
+      />
+      {tooltip && (
+        <div style={{
+          position: 'fixed', left: tooltip.x + 20, top: tooltip.y + 20,
+          background: 'rgba(5, 5, 14, 0.95)', border: '1px solid var(--border)',
+          padding: '12px 16px', borderRadius: 8, color: 'var(--text)',
+          zIndex: 100, pointerEvents: 'none',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+          fontFamily: 'Inter, sans-serif',
+          backdropFilter: 'blur(8px)',
+          minWidth: 200
+        }}>
+          {tooltip.data.type === 'physician' && (
+            <>
+              <div style={{ color: 'var(--red)', fontWeight: 700, fontSize: 10, marginBottom: 4, letterSpacing: '0.08em' }}>SUSPECTED COLLUSION HUB</div>
+              <div style={{ fontSize: 14, fontWeight: 500, fontFamily: 'JetBrains Mono, monospace' }}>Physician {tooltip.data.id}</div>
+              <div style={{ fontSize: 12, color: 'var(--dim)', marginTop: 8 }}>
+                Connected to {linksRef.current.filter(l => l.source.id === tooltip.data.id || l.target.id === tooltip.data.id).length} providers
+              </div>
+            </>
+          )}
+          {tooltip.data.type === 'provider' && (
+            <>
+              <div style={{ color: tooltip.data.risk === 'HIGH' ? 'var(--amber)' : tooltip.data.risk === 'MEDIUM' ? 'var(--teal)' : 'var(--muted)', fontWeight: 700, fontSize: 10, marginBottom: 4, letterSpacing: '0.08em' }}>
+                {tooltip.data.risk} RISK PROVIDER
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 500, fontFamily: 'JetBrains Mono, monospace' }}>{tooltip.data.id}</div>
+              {tooltip.data.fraud && (
+                <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 8, fontWeight: 600 }}>★ Confirmed Fraud (Ground Truth)</div>
+              )}
+            </>
+          )}
+          {tooltip.data.type === 'patient' && (
+            <>
+              <div style={{ color: 'var(--muted)', fontWeight: 700, fontSize: 10, marginBottom: 4, letterSpacing: '0.08em' }}>PATIENT</div>
+              <div style={{ fontSize: 14, fontWeight: 500, fontFamily: 'JetBrains Mono, monospace' }}>{tooltip.data.id}</div>
+            </>
+          )}
+        </div>
+      )}
+    </>
   )
 }

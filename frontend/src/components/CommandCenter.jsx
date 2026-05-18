@@ -1,49 +1,30 @@
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import GraphBackground from './GraphBackground'
 import ValidationView from './ValidationView'
 import AboutView from './AboutView'
+import { fmt } from '../utils'
+import { RiskBadge, GTBadge, SignalPills } from './shared/Badges'
 
-const fmt = n => n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n / 1e3).toFixed(0)}K` : `$${n.toFixed(0)}`
-
-function RiskBadge({ level }) {
-  const colors = { HIGH: ['rgba(232,168,56,0.12)', 'var(--amber)'], MEDIUM: ['rgba(56,178,172,0.12)', 'var(--teal)'], LOW: ['rgba(80,80,100,0.12)', 'var(--dim)'] }
-  const [bg, color] = colors[level] || colors.LOW
-  return (
-    <span style={{ background: bg, color, borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: 'JetBrains Mono, monospace' }}>
-      {level}
-    </span>
-  )
-}
-
-function GTBadge({ label }) {
-  const isFraud = label === true || label === 'Yes' || label === 'true'
-  return (
-    <span style={{ background: isFraud ? 'rgba(232,93,93,0.12)' : 'rgba(56,178,172,0.12)', color: isFraud ? 'var(--red)' : 'var(--teal)', borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em' }}>
-      {isFraud ? '⚑ FRAUD' : '✓ LEGIT'}
-    </span>
-  )
-}
-
-function SignalPills({ signals }) {
-  const map = { billing: ['BIL', 'var(--amber)'], collusion: ['COL', 'var(--red)'], patient: ['PAT', 'var(--teal)'], temporal: ['TMP', '#b080e0'] }
-  return (
-    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-      {Object.entries(map).map(([k, [label, color]]) => (
-        <span key={k} style={{
-          fontFamily: 'JetBrains Mono, monospace', fontSize: 9, fontWeight: 700, letterSpacing: '0.06em',
-          padding: '2px 7px', borderRadius: 20,
-          background: signals[k] ? `${color}22` : 'rgba(80,80,100,0.08)',
-          color: signals[k] ? color : 'var(--dim)',
-          border: signals[k] ? `1px solid ${color}33` : '1px solid transparent',
-        }}>
-          {label}
-        </span>
-      ))}
-    </div>
-  )
+// Simple count up hook for stats
+function useCountUp(target, duration = 1500) {
+  const [val, setVal] = useState(0)
+  useEffect(() => {
+    if (!target) return
+    const start = Date.now()
+    const tick = () => {
+      const progress = Math.min((Date.now() - start) / duration, 1)
+      const ease = 1 - Math.pow(1 - progress, 3)
+      setVal(Math.floor(ease * target))
+      if (progress < 1) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }, [target, duration])
+  return val
 }
 
 export default function CommandCenter({ data, activeTab, setActiveTab, onInvestigate, graphMode, onChangeDataset }) {
+  const [xRayMode, setXRayMode] = useState(false)
   const meta = data?.meta || {}
   const cases = data?.case_files || []
   const sorted = [...cases].sort((a, b) => b.estimated_fraud_amount - a.estimated_fraud_amount)
@@ -56,11 +37,24 @@ export default function CommandCenter({ data, activeTab, setActiveTab, onInvesti
 
   const statCards = [
     { label: 'Agents Deployed', val: '5', sub: 'billing · collusion · patient · temporal · synthesis', color: 'var(--text)' },
-    { label: 'High Risk', val: meta.high_risk_count ?? 14, color: 'var(--amber)', sub: 'referred for audit' },
-    { label: 'Medium Risk', val: meta.medium_risk_count ?? 1, color: 'var(--teal)', sub: 'flagged for review' },
-    { label: 'Collusion Rings', val: meta.collusion_rings ?? 5, color: 'var(--text)', sub: 'physician-linked networks' },
-    { label: 'Temporal Anomalies', val: meta.temporal_anomalies ?? 0, color: '#b080e0', sub: 'impossible timelines' },
+    { label: 'High Risk', val: meta.high_risk_count ?? 0, color: 'var(--amber)', sub: 'referred for audit', isAnim: true },
+    { label: 'Medium Risk', val: meta.medium_risk_count ?? 0, color: 'var(--teal)', sub: 'flagged for review', isAnim: true },
+    { label: 'Collusion Rings', val: meta.collusion_rings ?? 0, color: 'var(--text)', sub: 'physician-linked networks', isAnim: true },
+    { label: 'Temporal Anomalies', val: meta.temporal_anomalies ?? 0, color: '#b080e0', sub: 'impossible timelines', isAnim: true },
   ]
+
+  const animHighRisk = useCountUp(meta.high_risk_count ?? 0)
+  const animMediumRisk = useCountUp(meta.medium_risk_count ?? 0)
+  const animRings = useCountUp(meta.collusion_rings ?? 0)
+  const animTemporal = useCountUp(meta.temporal_anomalies ?? 0)
+
+  const getAnimVal = (label, val) => {
+    if (label === 'High Risk') return animHighRisk
+    if (label === 'Medium Risk') return animMediumRisk
+    if (label === 'Collusion Rings') return animRings
+    if (label === 'Temporal Anomalies') return animTemporal
+    return val
+  }
 
   return (
     <motion.div
@@ -71,16 +65,47 @@ export default function CommandCenter({ data, activeTab, setActiveTab, onInvesti
       exit={{ opacity: 0 }}
       transition={{ duration: 0.5 }}
     >
-      <GraphBackground data={data} graphMode="idle" opacity={0.12} />
+      <GraphBackground data={data} graphMode={activeTab === 'command' && xRayMode ? 'xray' : 'idle'} opacity={activeTab === 'command' && xRayMode ? 1.0 : 0.12} />
 
       <div style={{ position: 'relative', zIndex: 1 }}>
+        {/* ALERT BANNER */}
+        {(meta.high_risk_count > 0 || meta.collusion_rings > 0) && (
+          <div style={{
+            background: 'rgba(232,168,56,0.06)',
+            borderBottom: '1px solid rgba(232,168,56,0.15)',
+            padding: '8px 0',
+            overflow: 'hidden',
+            position: 'relative',
+          }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24,
+              fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.08em',
+              color: 'var(--amber)',
+              whiteSpace: 'nowrap',
+            }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--amber)', animation: 'pulseAmber 2s infinite', display: 'inline-block' }} />
+                ACTIVE INVESTIGATION
+              </span>
+              <span style={{ color: 'var(--dim)' }}>│</span>
+              <span><span style={{ fontWeight: 700 }}>{meta.high_risk_count || 0}</span> HIGH-risk providers detected</span>
+              <span style={{ color: 'var(--dim)' }}>│</span>
+              <span><span style={{ fontWeight: 700 }}>{meta.collusion_rings || 0}</span> collusion rings active</span>
+              <span style={{ color: 'var(--dim)' }}>│</span>
+              <span><span style={{ fontWeight: 700 }}>{fmt(meta.estimated_fraud_total || 0)}</span> estimated exposure</span>
+              <span style={{ color: 'var(--dim)' }}>│</span>
+              <span><span style={{ fontWeight: 700 }}>{meta.temporal_anomalies || 0}</span> temporal anomalies</span>
+            </div>
+          </div>
+        )}
+
         {/* TOP BAR */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '18px 40px',
-          background: 'rgba(15,15,26,0.92)',
+          background: 'rgba(0,0,0,0.96)',
           backdropFilter: 'blur(12px)',
-          borderBottom: '1px solid rgba(255,255,255,0.04)',
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
           position: 'sticky', top: 0, zIndex: 100,
         }}>
           <div>
@@ -93,11 +118,11 @@ export default function CommandCenter({ data, activeTab, setActiveTab, onInvesti
           </div>
 
           <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--muted)', display: 'flex', gap: 20, letterSpacing: '0.03em' }}>
-            <span><span style={{ color: 'var(--text)', fontWeight: 600 }}>{meta.provider_count || 30}</span> Providers Scanned</span>
+            <span><span style={{ color: 'var(--text)', fontWeight: 600 }}>{meta.provider_count || 0}</span> Providers Scanned</span>
             <span style={{ color: 'var(--dim)' }}>|</span>
-            <span><span style={{ color: 'var(--text)', fontWeight: 600 }}>{meta.case_count || 15}</span> Cases Generated</span>
+            <span><span style={{ color: 'var(--text)', fontWeight: 600 }}>{meta.case_count || 0}</span> Cases Generated</span>
             <span style={{ color: 'var(--dim)' }}>|</span>
-            <span><span style={{ color: 'var(--amber)', fontWeight: 600 }}>{fmt(meta.estimated_fraud_total || 6906440)}</span> Est. Fraud</span>
+            <span><span style={{ color: 'var(--amber)', fontWeight: 600 }}>{fmt(meta.estimated_fraud_total || 0)}</span> Est. Fraud</span>
           </div>
 
           <nav style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -111,6 +136,8 @@ export default function CommandCenter({ data, activeTab, setActiveTab, onInvesti
                 ← Change Dataset
               </button>
             )}
+            
+
             {tabs.map(t => (
               <button
                 key={t.id}
@@ -144,13 +171,98 @@ export default function CommandCenter({ data, activeTab, setActiveTab, onInvesti
             {/* Stat cards */}
             <div style={{ display: 'flex', gap: 18, padding: '32px 40px 0', flexWrap: 'wrap' }}>
               {statCards.map(c => (
-                <div key={c.label} className="nm-raised" style={{ flex: 1, minWidth: 160, padding: '24px 20px' }}>
+                <div key={c.label} className="stat-card" style={{ flex: 1, minWidth: 160, padding: '24px 20px' }}>
                   <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.2em', color: 'var(--dim)', textTransform: 'uppercase', marginBottom: 10 }}>{c.label}</div>
-                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 38, fontWeight: 800, color: c.color, lineHeight: 1, marginBottom: 8 }}>{c.val}</div>
+                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 38, fontWeight: 800, color: c.color, lineHeight: 1, marginBottom: 8 }}>
+                    {c.isAnim ? getAnimVal(c.label, c.val) : c.val}
+                  </div>
                   <div style={{ fontSize: 11, color: 'var(--dim)', letterSpacing: '0.04em' }}>{c.sub}</div>
                 </div>
               ))}
             </div>
+
+            {/* Fraud Summary Charts */}
+            {sorted.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, padding: '24px 40px 0' }}>
+                {/* Top Providers Bar Chart */}
+                <div className="stat-card" style={{ padding: '22px 24px' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', color: 'var(--dim)', textTransform: 'uppercase', marginBottom: 16 }}>Top Providers by Estimated Fraud</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {sorted.slice(0, 8).map((cf, i) => {
+                      const maxAmt = sorted[0]?.estimated_fraud_amount || 1
+                      const pct = Math.round((cf.estimated_fraud_amount / maxAmt) * 100)
+                      return (
+                        <div key={cf.provider_id} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={() => onInvestigate(cf.provider_id)}>
+                          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--muted)', minWidth: 80, textAlign: 'right' }}>{cf.provider_id}</div>
+                          <div style={{ flex: 1, height: 18, borderRadius: 4, background: 'rgba(5,5,14,0.5)', overflow: 'hidden', position: 'relative' }}>
+                            <motion.div
+                              initial={{ width: 0 }}
+                              animate={{ width: `${pct}%` }}
+                              transition={{ delay: i * 0.06, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                              style={{
+                                height: '100%', borderRadius: 4,
+                                background: cf.overall_risk_level === 'HIGH'
+                                  ? 'linear-gradient(90deg, rgba(232,168,56,0.5), rgba(232,168,56,0.8))'
+                                  : 'linear-gradient(90deg, rgba(56,178,172,0.4), rgba(56,178,172,0.7))',
+                              }}
+                            />
+                          </div>
+                          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, fontWeight: 600, color: 'var(--amber)', minWidth: 52, textAlign: 'right' }}>{fmt(cf.estimated_fraud_amount)}</div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Agent Signal Distribution */}
+                <div className="stat-card" style={{ padding: '22px 24px' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', color: 'var(--dim)', textTransform: 'uppercase', marginBottom: 16 }}>Agent Signal Distribution</div>
+                  {(() => {
+                    const billing = cases.filter(c => c.agent_signals?.billing).length
+                    const collusion = cases.filter(c => c.agent_signals?.collusion).length
+                    const patient = cases.filter(c => c.agent_signals?.patient).length
+                    const temporal = cases.filter(c => c.agent_signals?.temporal).length
+                    const total = billing + collusion + patient + temporal || 1
+                    const signals = [
+                      { label: 'Billing', count: billing, color: 'var(--amber)', pct: Math.round(billing / total * 100) },
+                      { label: 'Collusion', count: collusion, color: 'var(--red)', pct: Math.round(collusion / total * 100) },
+                      { label: 'Patient', count: patient, color: 'var(--teal)', pct: Math.round(patient / total * 100) },
+                      { label: 'Temporal', count: temporal, color: '#b080e0', pct: Math.round(temporal / total * 100) },
+                    ]
+                    return (
+                      <>
+                        {/* Stacked bar */}
+                        <div style={{ display: 'flex', height: 28, borderRadius: 6, overflow: 'hidden', marginBottom: 20, boxShadow: 'inset 2px 2px 5px var(--shadow-d), inset -1px -1px 3px var(--shadow-l)' }}>
+                          {signals.map(s => (
+                            <motion.div
+                              key={s.label}
+                              initial={{ width: 0 }}
+                              animate={{ width: `${s.pct}%` }}
+                              transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+                              style={{ background: s.color, height: '100%', minWidth: s.count > 0 ? 4 : 0 }}
+                              title={`${s.label}: ${s.count} providers`}
+                            />
+                          ))}
+                        </div>
+                        {/* Legend */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                          {signals.map(s => (
+                            <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, background: 'rgba(5,5,14,0.4)' }}>
+                              <div style={{ width: 10, height: 10, borderRadius: 3, background: s.color, flexShrink: 0 }} />
+                              <div>
+                                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, fontWeight: 600, color: 'var(--text)', letterSpacing: '0.06em' }}>{s.label}</div>
+                                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 18, fontWeight: 700, color: s.color, lineHeight: 1, marginTop: 2 }}>{s.count}</div>
+                                <div style={{ fontSize: 9, color: 'var(--dim)', marginTop: 1 }}>{s.pct}% of signals</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )
+                  })()}
+                </div>
+              </div>
+            )}
 
             {/* Provider table */}
             <div style={{ padding: '28px 40px 48px' }}>
@@ -160,9 +272,9 @@ export default function CommandCenter({ data, activeTab, setActiveTab, onInvesti
                 </div>
               </div>
 
-              <div className="nm-inset" style={{ padding: '8px 4px' }}>
+              <div className="nm-inset" style={{ padding: '8px 4px', overflowX: 'auto' }}>
                 {/* Table header */}
-                <div style={{ display: 'grid', gridTemplateColumns: '160px 100px 120px 160px 110px 1fr', gap: 0, padding: '10px 20px', marginBottom: 4 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '160px 100px 120px 160px 110px 1fr', gap: 0, padding: '10px 20px', marginBottom: 4, minWidth: 750 }}>
                   {['Provider ID', 'Risk', 'Est. Fraud', 'Signals', 'Ground Truth', 'Action'].map(h => (
                     <div key={h} style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', color: 'var(--dim)', textTransform: 'uppercase' }}>{h}</div>
                   ))}
@@ -177,14 +289,13 @@ export default function CommandCenter({ data, activeTab, setActiveTab, onInvesti
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: i * 0.04, duration: 0.4 }}
                       onClick={() => onInvestigate(cf.provider_id)}
-                      className="nm-raised"
+                      className="stat-card"
                       style={{
                         display: 'grid', gridTemplateColumns: '160px 100px 120px 160px 110px 1fr',
                         gap: 0, padding: '16px 20px',
                         cursor: 'pointer', transition: 'all 0.2s',
-                        borderRadius: 12,
+                        borderRadius: 12, minWidth: 750,
                       }}
-                      whileHover={{ y: -2, boxShadow: '8px 8px 20px var(--shadow-d), -5px -5px 15px var(--shadow-l)' }}
                       whileTap={{ scale: 0.99 }}
                     >
                       <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 500, color: 'var(--text)', alignSelf: 'center' }}>

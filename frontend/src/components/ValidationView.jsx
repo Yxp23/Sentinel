@@ -23,8 +23,8 @@ function useCountUp(target, duration = 3000) {
 
 export default function ValidationView({ data }) {
   const cases = data?.case_files || []
+  const hasLabels = cases.some(c => c.fraud_label === true || c.fraud_label === false)
   const highCases = cases.filter(c => c.overall_risk_level === 'HIGH')
-  const medCases = cases.filter(c => c.overall_risk_level === 'MEDIUM')
   const isKnownFraud = c => c.fraud_label === true || c.fraud_label === 'Yes' || c.fraud_label === 'true'
   const truePositives = highCases.filter(isKnownFraud)
   const falsePositives = highCases.length - truePositives.length
@@ -35,6 +35,28 @@ export default function ValidationView({ data }) {
   const pVal = useCountUp(precision, 3000)
 
   const flagged = cases.filter(c => c.overall_risk_level !== 'LOW')
+
+  if (!hasLabels) {
+    return (
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4 }}
+        style={{ padding: '32px 40px 60px', maxWidth: 760, margin: '0 auto', textAlign: 'center' }}>
+        <div style={{ fontFamily: PF, fontWeight: 700, fontSize: 28, color: 'var(--text)', marginBottom: 20 }}>Agent Validation</div>
+        <div className="nm-raised" style={{ padding: '48px 40px', borderLeft: '3px solid var(--amber)' }}>
+          <div style={{ fontSize: 40, marginBottom: 16 }}>📊</div>
+          <div style={{ fontFamily: PF, fontWeight: 600, fontSize: 20, color: 'var(--text)', marginBottom: 12 }}>No Ground Truth Labels Available</div>
+          <div style={{ fontFamily: SF, fontSize: 14, color: 'var(--muted)', lineHeight: 1.85, maxWidth: 480, margin: '0 auto' }}>
+            This dataset was uploaded without a fraud labels file (e.g. Test dataset). The agents ran detection purely on behavioral signals —
+            billing anomalies, collusion networks, patient patterns, and temporal impossibilities.
+            <br /><br />
+            To see precision/recall metrics, upload a dataset that includes a labels CSV with a <code style={{ color: 'var(--amber)', background: 'rgba(232,168,56,0.1)', padding: '1px 6px', borderRadius: 4 }}>PotentialFraud</code> column.
+          </div>
+          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--dim)', marginTop: 24, letterSpacing: '0.1em' }}>
+            {highCases.length} HIGH · {flagged.length - highCases.length} MEDIUM · Detection complete
+          </div>
+        </div>
+      </motion.div>
+    )
+  }
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4 }} style={{ padding: '32px 40px 60px' }}>
@@ -144,9 +166,12 @@ export default function ValidationView({ data }) {
                     </span>
                   </div>
                   <div style={{ alignSelf: 'center' }}>
-                    <span style={{ background: gt ? 'rgba(232,93,93,0.12)' : 'rgba(56,178,172,0.12)', color: gt ? 'var(--red)' : 'var(--teal)', borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em' }}>
-                      {gt ? '⚑ FRAUD' : '✓ LEGIT'}
-                    </span>
+                    {cf.fraud_label === null || cf.fraud_label === undefined
+                      ? <span style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--dim)', borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em' }}>— N/A</span>
+                      : <span style={{ background: gt ? 'rgba(232,93,93,0.12)' : 'rgba(56,178,172,0.12)', color: gt ? 'var(--red)' : 'var(--teal)', borderRadius: 20, padding: '3px 10px', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em' }}>
+                          {gt ? '⚑ FRAUD' : '✓ LEGIT'}
+                        </span>
+                    }
                   </div>
                   <div style={{ fontSize: 18, alignSelf: 'center' }} title={isHigh && gt ? 'True positive' : isHigh && !gt ? 'False positive' : gt ? 'Detected MEDIUM (under-escalated)' : 'MEDIUM, legit'}>{matchIcon}</div>
                   <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 600, color: cf.estimated_fraud_amount > 0 ? 'var(--amber)' : 'var(--dim)', alignSelf: 'center' }}>

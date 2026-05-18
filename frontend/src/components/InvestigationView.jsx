@@ -2,20 +2,11 @@ import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import GraphBackground from './GraphBackground'
 import InvestigationGraph from './InvestigationGraph'
+import { fmt } from '../utils'
+import { RiskBadge } from './shared/Badges'
 
-const fmt = n => n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n / 1e3).toFixed(0)}K` : `$${n.toFixed(0)}`
 const PF = '"Playfair Display", Georgia, serif'
 const SF = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif'
-
-function RiskBadge({ level, large }) {
-  const colors = { HIGH: ['rgba(232,168,56,0.12)', 'var(--amber)'], MEDIUM: ['rgba(56,178,172,0.12)', 'var(--teal)'], LOW: ['rgba(80,80,100,0.1)', 'var(--dim)'] }
-  const [bg, color] = colors[level] || colors.LOW
-  return (
-    <span style={{ background: bg, color, borderRadius: 20, padding: large ? '6px 18px' : '4px 12px', fontSize: large ? 13 : 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: 'JetBrains Mono, monospace' }}>
-      {level}
-    </span>
-  )
-}
 
 function AgentPipeline({ activeStep }) {
   const steps = ['Data', 'Billing', 'Collusion', 'Patient', 'Temporal', 'Synthesis']
@@ -184,6 +175,14 @@ export default function InvestigationView({ data, provider: cf, onBack }) {
             </button>
             <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: '0.2em', color: 'var(--muted)', textTransform: 'uppercase' }}>
               Investigating
+            </div>
+            <div style={{ marginLeft: 'auto' }}>
+              <button
+                onClick={() => window.print()}
+                style={{ background: 'var(--bg)', border: 'none', borderRadius: 8, color: 'var(--amber)', cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, padding: '8px 16px', boxShadow: '4px 4px 10px var(--shadow-d), -3px -3px 8px var(--shadow-l)', display: 'flex', alignItems: 'center', gap: 6, letterSpacing: '0.08em' }}
+              >
+                📄 Export Report
+              </button>
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>

@@ -3,19 +3,19 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg: #0f0f1a;
-  --bg2: #13131f;
-  --grid: #1a1a2e;
-  --shadow-d: #05050e;
-  --shadow-l: #1c1c30;
+  --bg: #111111;
+  --bg2: #181818;
+  --grid: #1e1e1e;
+  --shadow-d: #050505;
+  --shadow-l: #222222;
   --amber: #e8a838;
   --amber-dim: #a07020;
   --amber-glow: rgba(232,168,56,0.18);
   --teal: #38b2ac;
   --red: #e85d5d;
-  --text: #e8e8f0;
-  --muted: #8888aa;
-  --dim: #404058;
+  --text: #e8e8e8;
+  --muted: #888888;
+  --dim: #444444;
   --mono: 'JetBrains Mono', monospace;
   --sans: 'Inter', sans-serif;
   --display: 'Playfair Display', Georgia, serif;
@@ -43,8 +43,8 @@ body {
 .grid-bg {
   background-color: var(--bg);
   background-image:
-    linear-gradient(rgba(26,26,46,0.8) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(26,26,46,0.8) 1px, transparent 1px);
+    linear-gradient(rgba(30,30,30,0.8) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30,30,30,0.8) 1px, transparent 1px);
   background-size: 40px 40px;
 }
 
@@ -70,6 +70,17 @@ body {
   box-shadow: inset 3px 3px 7px var(--shadow-d), inset -2px -2px 5px var(--shadow-l);
 }
 
+.stat-card {
+  background: var(--bg);
+  border-radius: 14px;
+  box-shadow: 7px 7px 18px var(--shadow-d), -5px -5px 14px var(--shadow-l);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+}
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 10px 10px 24px var(--shadow-d), -6px -6px 18px var(--shadow-l), 0 0 20px rgba(232,168,56,0.08);
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
@@ -90,4 +101,24 @@ body {
 @keyframes countUp {
   from { opacity: 0; }
   to   { opacity: 1; }
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Print styles for investigation report export */
+@media print {
+  body { background: #fff !important; color: #111 !important; }
+  .grid-bg { background: #fff !important; background-image: none !important; }
+  .nm-raised, .nm-inset, .nm-raised-sm, .nm-inset-sm {
+    box-shadow: none !important;
+    border: 1px solid #ddd !important;
+    background: #fff !important;
+  }
+  svg { display: none !important; }
+  button { display: none !important; }
+  [data-scroll-root] { overflow: visible !important; height: auto !important; }
+  * { color: #111 !important; animation: none !important; transition: none !important; }
+  div[style*="position: fixed"] { position: static !important; }
 }

@@ -50,6 +50,37 @@ function TypingDots() {
   )
 }
 
+function renderSimpleMarkdown(text) {
+  if (!text) return text
+  return text.split('\n').map((line, i) => {
+    // Headers
+    if (line.startsWith('### ')) return <div key={i} style={{ fontWeight: 700, fontSize: 13, color: 'var(--amber)', marginTop: 8, marginBottom: 2 }}>{line.slice(4)}</div>
+    if (line.startsWith('## ')) return <div key={i} style={{ fontWeight: 700, fontSize: 14, color: 'var(--amber)', marginTop: 10, marginBottom: 3 }}>{line.slice(3)}</div>
+    // Bullet points
+    if (line.startsWith('- ') || line.startsWith('• ')) {
+      const content = line.slice(2)
+      return <div key={i} style={{ paddingLeft: 12, position: 'relative', marginTop: 2 }}><span style={{ position: 'absolute', left: 0, color: 'var(--amber)' }}>•</span>{renderInline(content)}</div>
+    }
+    // Numbered lists
+    const numMatch = line.match(/^(\d+)\.\s(.*)/)
+    if (numMatch) return <div key={i} style={{ paddingLeft: 16, position: 'relative', marginTop: 2 }}><span style={{ position: 'absolute', left: 0, color: 'var(--amber)', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{numMatch[1]}.</span>{renderInline(numMatch[2])}</div>
+    // Regular line
+    if (line.trim() === '') return <div key={i} style={{ height: 6 }} />
+    return <div key={i}>{renderInline(line)}</div>
+  })
+}
+
+function renderInline(text) {
+  // Bold: **text**
+  const parts = text.split(/(\*\*[^*]+\*\*)/g)
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i} style={{ color: 'var(--text)', fontWeight: 600 }}>{part.slice(2, -2)}</strong>
+    }
+    return part
+  })
+}
+
 function Message({ msg }) {
   const isUser = msg.role === 'user'
   return (
@@ -90,8 +121,20 @@ function Message({ msg }) {
         lineHeight: 1.7,
         color: 'var(--text)',
         whiteSpace: 'pre-wrap',
+        position: 'relative'
       }}>
-        {msg.content}
+        {isUser ? msg.content : renderSimpleMarkdown(msg.content)}
+        {msg.time && (
+          <div style={{
+            fontSize: 9,
+            color: 'var(--dim)',
+            textAlign: isUser ? 'right' : 'left',
+            marginTop: 4,
+            fontFamily: MONO
+          }}>
+            {msg.time}
+          </div>
+        )}
       </div>
     </motion.div>
   )
@@ -128,7 +171,8 @@ export default function SentinelChat({ page = 'command', provider = null, meta =
       const text = page === 'investigation' ? opener(provider)
                  : page === 'command' ? opener(meta)
                  : opener()
-      setMessages([{ role: 'assistant', content: text }])
+      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      setMessages([{ role: 'assistant', content: text, time }])
     }
     if (open) setTimeout(() => inputRef.current?.focus(), 300)
   }, [open])
@@ -143,7 +187,8 @@ export default function SentinelChat({ page = 'command', provider = null, meta =
     setInput('')
 
     const history = messages.filter(m => m.role !== 'system')
-    const userMsg = { role: 'user', content: msg }
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    const userMsg = { role: 'user', content: msg, time }
     setMessages(prev => [...prev, userMsg])
     setStreaming(true)
     setStreamingText('')
@@ -161,8 +206,15 @@ export default function SentinelChat({ page = 'command', provider = null, meta =
       })
 
       if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: 'Request failed' }))
-        setMessages(prev => [...prev, { role: 'assistant', content: `⚠ ${err.error || 'Request failed'}` }])
+        let errMsg = `Server error (${resp.status})`
+        if (resp.status === 404) errMsg = 'Chat endpoint not found — restart the server.'
+        else if (resp.status === 503) errMsg = 'OPENAI_API_KEY not set — add it to your environment and restart the server.'
+        else {
+          const body = await resp.json().catch(() => null)
+          if (body?.error) errMsg = body.error
+        }
+        const errTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        setMessages(prev => [...prev, { role: 'assistant', content: `⚠ ${errMsg}`, time: errTime }])
         setStreaming(false)
         return
       }
@@ -192,13 +244,15 @@ export default function SentinelChat({ page = 'command', provider = null, meta =
               setStreamingText(accumulated)
             } catch {}
           } else if (evtName === 'done') {
-            setMessages(prev => [...prev, { role: 'assistant', content: accumulated }])
+            const botTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            setMessages(prev => [...prev, { role: 'assistant', content: accumulated, time: botTime }])
             setStreamingText('')
             setStreaming(false)
           } else if (evtName === 'error') {
             try {
               const { message: errMsg } = JSON.parse(evtData)
-              setMessages(prev => [...prev, { role: 'assistant', content: `⚠ ${errMsg}` }])
+              const errTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              setMessages(prev => [...prev, { role: 'assistant', content: `⚠ ${errMsg}`, time: errTime }])
             } catch {}
             setStreamingText('')
             setStreaming(false)
@@ -207,7 +261,8 @@ export default function SentinelChat({ page = 'command', provider = null, meta =
       }
     } catch (err) {
       if (err.name !== 'AbortError') {
-        setMessages(prev => [...prev, { role: 'assistant', content: '⚠ Connection failed. Check server.' }])
+        const errTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        setMessages(prev => [...prev, { role: 'assistant', content: '⚠ Connection failed. Check server.', time: errTime }])
       }
       setStreamingText('')
       setStreaming(false)
@@ -303,8 +358,24 @@ export default function SentinelChat({ page = 'command', provider = null, meta =
                       : 'Investigation context'}
                   </div>
                 </div>
-                <div style={{ marginLeft: 'auto', fontFamily: MONO, fontSize: 9, color: 'var(--dim)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                  gpt-4o-mini
+                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+
+                  <button 
+                    onClick={() => {
+                      if (window.confirm('Clear conversation history?')) {
+                        const opener = OPENING_MESSAGES[page] || OPENING_MESSAGES.default
+                        const text = page === 'investigation' ? opener(provider) : page === 'command' ? opener(meta) : opener()
+                        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        setMessages([{ role: 'assistant', content: text, time }])
+                      }
+                    }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: 13, transition: 'opacity 0.2s', padding: 4 }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                    onMouseLeave={e => e.currentTarget.style.opacity = 0.6}
+                    title="Clear Chat"
+                  >
+                    🗑️
+                  </button>
                 </div>
               </div>
             </div>

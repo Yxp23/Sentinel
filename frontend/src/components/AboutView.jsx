@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
 import InvestigationDemo from './InvestigationDemo'
+import JacTerminal from './JacTerminal'
 
 const PF   = '"Playfair Display", Georgia, serif'
 const SF   = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif'
@@ -186,6 +187,21 @@ export default function AboutView() {
           ))}
         </div>
       </div>
+
+      {/* ── Jac Execution Terminal ── */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.5, duration: 0.5 }}
+        style={{ maxWidth: 840, margin: '0 auto', marginBottom: 48 }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <div style={{ fontFamily: PF, fontWeight: 700, fontSize: 18, color: 'var(--text)' }}>Jac Pipeline Execution</div>
+          <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.15em', color: 'var(--amber)', padding: '3px 10px', borderRadius: 20, background: 'rgba(232,168,56,0.1)', border: '1px solid rgba(232,168,56,0.2)', textTransform: 'uppercase' }}>
+            Live Log
+          </div>
+        </div>
+        <JacTerminal />
+      </motion.div>
 
       {/* ── Quote ── */}
       <motion.div

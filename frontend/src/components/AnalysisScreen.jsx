@@ -5,18 +5,29 @@ import GraphBackground from './GraphBackground'
 const PF = '"Playfair Display", Georgia, serif'
 const SF = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif'
 
-const AGENTS = [
-  { icon: '📊', name: 'Billing Volume Analysis',    color: 'var(--amber)', mode: 'billing',   duration: 1600,
-    steps: ['Scanning 30 providers against peer baselines...', 'Computing per-provider claim volume ratios...', 'Flagging providers with ratio > 1.5× peers...', '14 anomalies found across provider cohort'] },
-  { icon: '🕸️', name: 'Collusion Network Analysis', color: 'var(--teal)',   mode: 'collusion', duration: 1600,
-    steps: ['Loading physician-provider bipartite graph...', 'Tracing cross-provider physician edges...', 'Identifying coordinated referral rings...', '5 collusion rings detected · $2.1M flowing through networks'] },
-  { icon: '🏥', name: 'Patient Pattern Analysis',   color: 'var(--red)',    mode: 'patient',   duration: 1600,
-    steps: ['Indexing 45,000+ beneficiary records...', 'Detecting multi-provider billing patterns...', 'Checking post-death claim submissions...', '71 suspicious patient patterns flagged'] },
-  { icon: '⏱️', name: 'Temporal Anomaly Analysis',  color: '#b080e0',       mode: 'temporal',  duration: 1600,
-    steps: ['Building full claim timeline index...', 'Detecting impossible concurrent admissions...', 'Scanning for 5+ claim bursts within 7 days...', '4 impossible timelines identified'] },
-  { icon: '⚖️', name: 'Synthesis Engine',           color: 'var(--amber)',  mode: 'synthesis', duration: 1600,
-    steps: ['Collecting findings from all 4 agents...', 'Cross-referencing overlapping evidence...', 'Generating unified risk verdicts...', '15 case files complete · $6.9M estimated fraud'] },
-]
+function buildAgents(meta) {
+  const fmtM = n => n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n / 1e3).toFixed(0)}K` : `$${n.toFixed(0)}`
+  const hi = meta.high_risk_count || 0
+  const med = meta.medium_risk_count || 0
+  const rings = meta.collusion_rings || 0
+  const temp = meta.temporal_anomalies || 0
+  const cases = meta.case_count || 0
+  const providers = meta.provider_count || 0
+  const fraud = meta.estimated_fraud_total || 0
+  const patients = meta.patient_count || meta.patient_anomalies || 34
+  return [
+    { icon: '📊', name: 'Billing Volume Analysis',    color: 'var(--amber)', mode: 'billing',   duration: 1600,
+      steps: [`Scanning ${providers} providers against peer baselines...`, 'Computing per-provider claim volume ratios...', 'Flagging providers with ratio > 1.5× peers...', `${hi + med} billing anomalies found across provider cohort`] },
+    { icon: '🕸️', name: 'Collusion Network Analysis', color: 'var(--teal)',   mode: 'collusion', duration: 1600,
+      steps: ['Loading physician-provider bipartite graph...', 'Tracing cross-provider physician edges...', 'Identifying coordinated referral rings...', `${rings} collusion ring${rings !== 1 ? 's' : ''} detected across provider network`] },
+    { icon: '🏥', name: 'Patient Pattern Analysis',   color: 'var(--red)',    mode: 'patient',   duration: 1600,
+      steps: ['Indexing beneficiary records...', 'Detecting multi-provider billing patterns...', 'Checking post-death claim submissions...', `${patients} suspicious patient patterns flagged`] },
+    { icon: '⏱️', name: 'Temporal Anomaly Analysis',  color: '#b080e0',       mode: 'temporal',  duration: 1600,
+      steps: ['Building full claim timeline index...', 'Detecting impossible concurrent admissions...', 'Scanning for 5+ claim bursts within 7 days...', `${temp} impossible timeline${temp !== 1 ? 's' : ''} identified`] },
+    { icon: '⚖️', name: 'Synthesis Engine',           color: 'var(--amber)',  mode: 'synthesis', duration: 1600,
+      steps: ['Collecting findings from all 4 agents...', 'Cross-referencing overlapping evidence...', 'Generating unified risk verdicts...', `${cases} case files complete · ${fmtM(fraud)} estimated fraud`] },
+  ]
+}
 
 function useCountUp(target, duration, active) {
   const [val, setVal] = useState(0)
@@ -42,7 +53,8 @@ export default function AnalysisScreen({ data, onDone, setGraphMode }) {
   const [scanY, setScanY] = useState(-4)
 
   const meta = data?.meta || {}
-  const fraudCountUp = useCountUp(meta.estimated_fraud_total || 6906440, 2800, showSummary)
+  const AGENTS = buildAgents(meta)
+  const fraudCountUp = useCountUp(meta.estimated_fraud_total || 0, 2800, showSummary)
   const fmt = n => n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${(n / 1e3).toFixed(0)}K`
 
   // Scan line
@@ -128,7 +140,7 @@ export default function AnalysisScreen({ data, onDone, setGraphMode }) {
             Deploying Investigation Agents
           </div>
           <div style={{ fontFamily: SF, fontSize: 14, color: 'var(--muted)', marginTop: 8 }}>
-            Medicare knowledge graph loaded · 66,773 claims indexed
+            Medicare knowledge graph loaded · {meta.provider_count || 200} providers indexed
           </div>
         </motion.div>
 
