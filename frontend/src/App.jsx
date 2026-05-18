@@ -6,6 +6,7 @@ import DataInputScreen from './components/DataInputScreen'
 import AnalysisScreen from './components/AnalysisScreen'
 import CommandCenter from './components/CommandCenter'
 import InvestigationView from './components/InvestigationView'
+import SentinelChat from './components/SentinelChat'
 
 function ScrollToTop() {
   const [visible, setVisible] = useState(false)
@@ -95,9 +96,30 @@ export default function App() {
     setScreen('investigation')
   }
 
+  const chatPage = screen === 'investigation' ? 'investigation'
+                 : screen === 'command' ? (activeTab === 'validation' ? 'validation' : 'command')
+                 : null
+
+  const chatMeta = data ? {
+    provider_count: data.metadata?.provider_count ?? data.case_files?.length ?? 0,
+    case_count: data.case_files?.length ?? 0,
+    high_risk_count: data.case_files?.filter(c => c.overall_risk_level === 'HIGH').length ?? 0,
+    medium_risk_count: data.case_files?.filter(c => c.overall_risk_level === 'MEDIUM').length ?? 0,
+    estimated_fraud_total: data.case_files?.reduce((s, c) => s + (c.estimated_fraud_amount || 0), 0) ?? 0,
+    collusion_rings: data.metadata?.collusion_rings ?? 0,
+    temporal_anomalies: data.metadata?.temporal_anomalies ?? 0,
+  } : null
+
   return (
     <>
     <ScrollToTop />
+    {chatPage && (
+      <SentinelChat
+        page={chatPage}
+        provider={screen === 'investigation' ? selectedProvider : null}
+        meta={chatMeta}
+      />
+    )}
     <AnimatePresence mode="wait">
       {screen === 'intro' && (
         <IntroScreen key="intro" onDone={() => setScreen('landing')} />
