@@ -47,7 +47,6 @@ def run_billing_agent(providers, claims):
             print(
                 f"[billing] {pid} skipped - within normal range "
                 f"(claims_ratio={claims_ratio:.2f}, amount_ratio={amount_ratio:.2f})",
-                flush=True,
             )
             continue
 
@@ -108,18 +107,18 @@ def run_billing_agent(providers, claims):
             f"(claims={total_claims} [{claims_ratio:.1f}x], "
             f"amount=${total_amount:,.0f} [{amount_ratio:.1f}x], "
             f"label={'Yes' if p['fraud_label'] else 'No'})...",
-            flush=True,
         )
-        print(f"  → risk={risk}\n", flush=True)
+        print(f"  → risk={risk}\n")
 
     print(f"[billing] Found {len(findings)} providers with anomalies", flush=True)
     return findings
 
 
 def run_collusion_agent(providers, claims):
-    """Find physicians shared between 2+ providers (collusion rings)."""
-    prov_fraud = {p["id"]: p["fraud_label"] for p in providers}
-
+    """
+    Find physicians shared between 2+ providers purely from billing behavior.
+    No fraud labels used — detection is based on network structure and dollar flow.
+    """
     phys_to_provs = defaultdict(set)
     phys_claim_counts = defaultdict(int)
     phys_amounts = defaultdict(float)
@@ -138,49 +137,53 @@ def run_collusion_agent(providers, claims):
                 phys_claim_counts[phys] += 1
                 phys_amounts[phys] += c.get("amount") or 0.0
 
-    print(f"[collusion] Mapped {len(phys_to_provs)} physicians to providers", flush=True)
+    # Compute peer averages for physicians who appear at 2+ providers
+    shared_all = [phys for phys, provs in phys_to_provs.items() if len(provs) >= 2]
+    if shared_all:
+        shared_amounts = [phys_amounts[p] for p in shared_all]
+        peer_avg_shared_amount = sum(shared_amounts) / len(shared_amounts)
+    else:
+        peer_avg_shared_amount = 1.0
 
-    shared = [phys for phys, provs in phys_to_provs.items() if len(provs) >= 2]
-    print(f"[collusion] Found {len(shared)} physicians shared between 2+ providers\n", flush=True)
+    print(f"[collusion] Mapped {len(phys_to_provs)} physicians to providers", flush=True)
+    print(f"[collusion] Found {len(shared_all)} physicians shared between 2+ providers "
+          f"(peer avg shared amount: ${peer_avg_shared_amount:,.0f})\n", flush=True)
 
     rings = []
 
-    for phys_id in shared:
+    for phys_id in shared_all:
         provs_list = sorted(phys_to_provs[phys_id])
-        fraud_provs = [p for p in provs_list if prov_fraud.get(p, False)]
-        non_fraud_provs = [p for p in provs_list if not prov_fraud.get(p, False)]
-
-        if not fraud_provs:
-            continue
-
         total_amount = phys_amounts[phys_id]
         claim_count = phys_claim_counts[phys_id]
-        fc = len(fraud_provs)
         tc = len(provs_list)
-        ff = fc / tc if tc > 0 else 0.0
 
-        if tc >= 3 and ff > 0.5 and total_amount > 50000:
+        # Amount ratio vs peer average of shared physicians
+        amount_ratio = total_amount / peer_avg_shared_amount if peer_avg_shared_amount > 0 else 0.0
+
+        # Signal: high dollar flow + spans many providers = coordination pattern
+        # Legitimate cross-provider physicians exist but have normal dollar amounts
+        if tc >= 4 and total_amount > 100000:
             risk = "HIGH"
-        elif fc >= 2 or (total_amount > 20000 and fc >= 1):
+        elif tc >= 3 and total_amount > 50000:
+            risk = "HIGH"
+        elif (tc >= 2 and total_amount > 80000) or (tc >= 3 and total_amount > 20000):
+            risk = "MEDIUM"
+        elif tc >= 2 and total_amount > 30000:
             risk = "MEDIUM"
         else:
             risk = "LOW"
 
-        if risk == "HIGH" and (ff < 0.5 or total_amount < 50000.0):
-            risk = "MEDIUM"
-        elif risk == "MEDIUM" and ff == 0.0:
-            risk = "LOW"
+        if risk == "LOW":
+            continue  # Skip low-signal shared physicians
 
         reasoning = (
-            f"Physician {phys_id} appears on claims from {tc} provider(s) "
-            f"({fc} fraud-labeled, {len(non_fraud_provs)} non-fraud). "
-            f"Total ring amount: ${total_amount:,.0f}, shared claim count: {claim_count}. "
+            f"Physician {phys_id} appears on claims from {tc} providers "
+            f"with ${total_amount:,.0f} total flow ({amount_ratio:.1f}× avg shared-physician amount). "
+            f"Shared claim count: {claim_count}. "
             + (
-                f"Fraud fraction {ff:.0%} and high dollar flow indicate coordinated billing."
+                "High provider count and dollar volume indicate coordinated ring."
                 if risk == "HIGH"
-                else "Partial fraud overlap warrants monitoring."
-                if risk == "MEDIUM"
-                else "Pattern consistent with legitimate group practice."
+                else "Dollar flow and cross-provider pattern warrant monitoring."
             )
         )
 
@@ -188,8 +191,8 @@ def run_collusion_agent(providers, claims):
             {
                 "physician_id": phys_id,
                 "connected_providers": provs_list,
-                "fraud_providers_in_ring": fraud_provs,
-                "non_fraud_providers_in_ring": non_fraud_provs,
+                "fraud_providers_in_ring": [],   # not using labels — populated for display only
+                "non_fraud_providers_in_ring": provs_list,
                 "shared_claim_count": claim_count,
                 "total_ring_amount": total_amount,
                 "risk_level": risk,
@@ -199,23 +202,27 @@ def run_collusion_agent(providers, claims):
 
         print(
             f"[collusion] Assessing physician {phys_id} "
-            f"(shared by {tc} providers, {fc} fraud, ${total_amount:,.0f} total)...",
+            f"(shared by {tc} providers, ${total_amount:,.0f} total, ratio={amount_ratio:.1f}x)...",
             flush=True,
         )
-        print(f"  → risk={risk}, reasoning={reasoning[:150]}...\n", flush=True)
+        print(f"  → risk={risk}\n", flush=True)
 
     print(f"[collusion] Found {len(rings)} collusion rings", flush=True)
     return rings
 
 
 def run_patient_agent(providers, claims, patients):
-    """Detect per-patient fraud patterns."""
-    prov_fraud = {p["id"]: p["fraud_label"] for p in providers}
+    """
+    Detect per-patient abuse patterns purely from structural and financial signals.
+    No fraud labels used — detection is based on claim counts, provider counts,
+    dollar amounts, and death records.
+    """
     deceased_lookup = {
         pat["id"]: {"deceased": pat["deceased"], "dod": pat.get("dod") or ""}
         for pat in patients
     }
 
+    # Compute peer averages for risk calibration
     pat_providers = defaultdict(list)
     pat_claim_counts = defaultdict(int)
     pat_amounts = defaultdict(float)
@@ -231,7 +238,13 @@ def run_patient_agent(providers, claims, patients):
         if c.get("claim_start"):
             pat_dates[bene].append(c["claim_start"])
 
-    print(f"[patient] Collected stats for {len(pat_providers)} patients\n", flush=True)
+    all_amounts = [pat_amounts[b] for b in pat_providers]
+    peer_avg_amt = sum(all_amounts) / len(all_amounts) if all_amounts else 1.0
+    all_counts  = [pat_claim_counts[b] for b in pat_providers]
+    peer_avg_cnt = sum(all_counts) / len(all_counts) if all_counts else 1.0
+
+    print(f"[patient] Collected stats for {len(pat_providers)} patients "
+          f"(peer avg: {peer_avg_cnt:.1f} claims, ${peer_avg_amt:,.0f})\n", flush=True)
 
     findings = []
     assessed = skipped = 0
@@ -241,8 +254,6 @@ def run_patient_agent(providers, claims, patients):
         total_amt = pat_amounts[bene]
         dates = pat_dates[bene]
         prov_count = len(provider_list)
-
-        fraud_prov_count = sum(1 for pid in provider_list if prov_fraud.get(pid, False))
 
         pat_info = deceased_lookup.get(bene, {})
         deceased = pat_info.get("deceased", False)
@@ -254,29 +265,32 @@ def run_patient_agent(providers, claims, patients):
             if latest > dod_str:
                 post_death = True
 
+        # Amount and claim count ratios vs peer
+        amt_ratio = total_amt / peer_avg_amt if peer_avg_amt > 0 else 0.0
+        cnt_ratio = claim_cnt / peer_avg_cnt if peer_avg_cnt > 0 else 0.0
+
+        # Pure structural / financial flags — no fraud labels
         computed_flags = []
         if prov_count >= 3:
-            computed_flags.append("multi_provider")
-        if claim_cnt >= 10:
-            computed_flags.append("high_volume")
+            computed_flags.append("multi_provider")       # seen at 3+ different providers
+        if claim_cnt >= 10 or cnt_ratio >= 5.0:
+            computed_flags.append("high_volume")          # 5× peer claim rate or 10+ claims
+        if total_amt >= 10000 and amt_ratio >= 4.0:
+            computed_flags.append("high_amount")          # 4× peer dollar amount
         if post_death:
-            computed_flags.append("post_death_claim")
-        if fraud_prov_count >= 2:
-            computed_flags.append("fraud_provider_overlap")
+            computed_flags.append("post_death_claim")     # definitive fraud
 
         if not computed_flags:
             skipped += 1
             continue
 
-        avg_claim_amt = total_amt / claim_cnt if claim_cnt > 0 else 0.0
         latest_date = max(dates) if dates else ""
         flags_txt = ", ".join(computed_flags)
 
         print(
             f"[patient] Assessing {bene} "
-            f"(providers={prov_count}, claims={claim_cnt}, "
-            f"amount=${total_amt:,.0f}, flags={computed_flags})...",
-            flush=True,
+            f"(providers={prov_count}, claims={claim_cnt} [{cnt_ratio:.1f}x], "
+            f"amount=${total_amt:,.0f} [{amt_ratio:.1f}x], flags={computed_flags})...",
         )
 
         if post_death:
@@ -285,40 +299,41 @@ def run_patient_agent(providers, claims, patients):
                 f"Patient {bene} has post-death claims (DOD: {dod_str}, latest claim: {latest_date}). "
                 "Billing after recorded death is definitive fraud."
             )
-        elif fraud_prov_count >= 3 and total_amt > 10000:
+        elif prov_count >= 5 and "high_amount" in computed_flags:
             risk = "HIGH"
             reasoning = (
-                f"Patient {bene} billed by {fraud_prov_count} fraud-labeled providers "
-                f"(${total_amt:,.0f} total). Flags: {flags_txt}."
+                f"Patient {bene} billed by {prov_count} providers "
+                f"with ${total_amt:,.0f} total ({amt_ratio:.1f}× peer avg). "
+                f"Extreme multi-provider concentration with abnormal dollar volume. Flags: {flags_txt}."
             )
-        elif prov_count >= 4:
+        elif prov_count >= 4 and total_amt > 5000:
             risk = "HIGH"
             reasoning = (
                 f"Patient {bene} appears at {prov_count} different providers "
                 f"(${total_amt:,.0f} total, {claim_cnt} claims). Flags: {flags_txt}."
             )
-        elif (
-            (fraud_prov_count >= 2 and 2000 <= total_amt <= 10000)
-            or (claim_cnt >= 10 and fraud_prov_count >= 1)
-            or prov_count >= 3
-        ):
+        elif "high_amount" in computed_flags and "multi_provider" in computed_flags:
+            risk = "HIGH"
+            reasoning = (
+                f"Patient {bene}: abnormally high billing (${total_amt:,.0f}, {amt_ratio:.1f}× peer) "
+                f"spread across {prov_count} providers. Flags: {flags_txt}."
+            )
+        elif "multi_provider" in computed_flags or "high_volume" in computed_flags:
             risk = "MEDIUM"
             reasoning = (
-                f"Patient {bene}: {fraud_prov_count} fraud provider(s) out of {prov_count} total, "
-                f"${total_amt:,.0f} billed, {claim_cnt} claims. Flags: {flags_txt}."
+                f"Patient {bene}: {prov_count} providers, {claim_cnt} claims ({cnt_ratio:.1f}× peer), "
+                f"${total_amt:,.0f} billed. Flags: {flags_txt}."
             )
         else:
             risk = "LOW"
             reasoning = (
-                f"Patient {bene}: limited fraud overlap ({fraud_prov_count} fraud providers), "
-                f"${total_amt:,.0f} total. Borderline flags: {flags_txt}."
+                f"Patient {bene}: borderline signals, ${total_amt:,.0f} total. Flags: {flags_txt}."
             )
 
+        # Final guard: post_death always HIGH; very small amounts shouldn't be HIGH
         if post_death:
             risk = "HIGH"
-        elif risk == "HIGH" and total_amt < 2000.0:
-            risk = "MEDIUM"
-        elif risk == "HIGH" and prov_count == 2 and fraud_prov_count == 2 and total_amt < 10000.0:
+        elif risk == "HIGH" and total_amt < 1000.0:
             risk = "MEDIUM"
 
         findings.append(
@@ -331,7 +346,7 @@ def run_patient_agent(providers, claims, patients):
             }
         )
         assessed += 1
-        print(f"  → risk={risk}, flags={computed_flags}\n", flush=True)
+        print(f"  → risk={risk}, flags={computed_flags}\n")
 
     print(f"[patient] Assessed: {assessed}, skipped: {skipped}", flush=True)
     return findings
@@ -348,7 +363,6 @@ def _pd(s):
 
 def run_temporal_agent(providers, claims, patients):
     """Detect temporal anomalies in patient claim patterns."""
-    prov_fraud = {p["id"]: p["fraud_label"] for p in providers}
     deceased_lookup = {
         pat["id"]: {"deceased": pat["deceased"], "dod": pat.get("dod") or ""}
         for pat in patients
@@ -477,7 +491,7 @@ def run_temporal_agent(providers, claims, patients):
         timeline = "; ".join(evid)
         priority = ["post_death_claim", "overlapping_stays", "patient_shuttling", "claim_burst"]
         primary = next((t for t in priority if t in atypes), atypes[0])
-        fpc = sum(1 for pid in iprovs_list if prov_fraud.get(pid, False))
+        n_provs = len(iprovs_list)
 
         if "post_death_claim" in atypes:
             risk = "HIGH"
@@ -485,39 +499,30 @@ def run_temporal_agent(providers, claims, patients):
                 f"Post-death billing detected for patient {bene} (DOD: {dod_str}). "
                 f"Claims filed after recorded death — definitive fraud. Evidence: {timeline}"
             )
-        elif "overlapping_stays" in atypes and fpc >= 1:
+        elif "overlapping_stays" in atypes:
             risk = "HIGH"
             reasoning = (
-                f"Overlapping inpatient stays involving {fpc} fraud-labeled provider(s). "
-                f"At least one claim must be fabricated. Evidence: {timeline}"
+                f"Overlapping inpatient stays across {n_provs} provider(s). "
+                f"Patient cannot be admitted to two hospitals simultaneously — at least one claim is fabricated. Evidence: {timeline}"
             )
-        elif "patient_shuttling" in atypes and fpc >= 2:
+        elif "patient_shuttling" in atypes and n_provs >= 2:
             risk = "HIGH"
             reasoning = (
-                f"Patient shuttling between {fpc} fraud-labeled providers. "
-                f"Coordinated rotation billing pattern. Evidence: {timeline}"
+                f"Patient shuttling pattern across {n_provs} providers. "
+                f"Rapid same-day discharge→admit cycles indicate coordinated rotation billing. Evidence: {timeline}"
             )
-        elif (
-            "overlapping_stays" in atypes
-            or ("patient_shuttling" in atypes and fpc >= 1)
-            or ("claim_burst" in atypes and fpc >= 1)
-        ):
+        elif "claim_burst" in atypes or "patient_shuttling" in atypes:
             risk = "MEDIUM"
             reasoning = (
-                f"Temporal anomaly ({', '.join(atypes)}) involving {fpc} fraud provider(s). "
+                f"Temporal anomaly ({', '.join(atypes)}) across {n_provs} provider(s). "
                 f"Evidence: {timeline}"
             )
         else:
             risk = "LOW"
             reasoning = (
-                f"Minor temporal anomaly ({', '.join(atypes)}) involving non-fraud providers. "
+                f"Minor temporal anomaly ({', '.join(atypes)}). "
                 f"Evidence: {timeline}"
             )
-
-        if "post_death_claim" in atypes:
-            risk = "HIGH"
-        elif "overlapping_stays" in atypes and risk == "LOW":
-            risk = "MEDIUM"
 
         findings.append(
             {
@@ -530,8 +535,8 @@ def run_temporal_agent(providers, claims, patients):
             }
         )
         assessed += 1
-        print(f"[temporal] {bene}: types={atypes}, providers={iprovs_list}", flush=True)
-        print(f"  → risk={risk}, type={primary}\n", flush=True)
+        print(f"[temporal] {bene}: types={atypes}, providers={iprovs_list}")
+        print(f"  → risk={risk}, type={primary}\n")
 
     print(f"[temporal] Assessed: {assessed}, skipped: {skipped}", flush=True)
     return findings
@@ -585,7 +590,7 @@ def run_synthesis(providers, billing_findings, collusion_rings, patient_findings
             overall_risk = "LOW"
 
 
-        if overall_risk == "LOW" and not fraud_label:
+        if overall_risk == "LOW":
             continue
 
         est_fraud = total_amount if overall_risk == "HIGH" else (total_amount * 0.3 if overall_risk == "MEDIUM" else 0.0)
@@ -674,7 +679,7 @@ def run_synthesis(providers, billing_findings, collusion_rings, patient_findings
 
     risk_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
     case_files.sort(
-        key=lambda x: (risk_order.get(x["overall_risk_level"], 3), not x["fraud_label"], -x["total_amount"])
+        key=lambda x: (risk_order.get(x["overall_risk_level"], 3), not bool(x["fraud_label"]), -x["total_amount"])
     )
 
     print(f"[synthesis] Built {len(case_files)} case files", flush=True)
@@ -699,8 +704,17 @@ def main(upload_dir=None):
         file_map = detect_uploaded_files(upload_dir)
         if file_map:
             print(f"[run_agents] Using uploaded files from {upload_dir}", flush=True)
+            for k, v in file_map.items():
+                print(f"[run_agents]   {k}: {v}", flush=True)
         else:
-            print(f"[run_agents] WARNING: couldn't detect uploaded files — using default data", flush=True)
+            print(
+                "[run_agents] ERROR: Could not detect required CSV files in upload directory.\n"
+                "  Need: inpatient CSV (AdmissionDt column), outpatient CSV (ClaimID column), "
+                "beneficiary CSV (DOB column).\n"
+                f"  Upload dir: {upload_dir}",
+                flush=True,
+            )
+            sys.exit(1)
 
     if upload_dir:
         provider_limit = 200

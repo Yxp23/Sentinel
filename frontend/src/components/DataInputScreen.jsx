@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import GraphBackground from './GraphBackground'
 
@@ -39,8 +39,26 @@ export default function DataInputScreen({ sampleData, onBegin, onBack }) {
   const [stages, setStages] = useState([])   // completed stage ids
   const [currentMsg, setCurrentMsg] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
+  const [elapsed, setElapsed] = useState(0)  // seconds since upload started
   const fileRef = useRef(null)
   const abortRef = useRef(null)
+  const elapsedRef = useRef(null)
+
+  useEffect(() => {
+    if (mode === 'uploading') {
+      setElapsed(0)
+      elapsedRef.current = setInterval(() => setElapsed(s => s + 1), 1000)
+    } else {
+      clearInterval(elapsedRef.current)
+    }
+    return () => clearInterval(elapsedRef.current)
+  }, [mode])
+
+  const fmtElapsed = (s) => {
+    const m = Math.floor(s / 60)
+    const sec = s % 60
+    return m > 0 ? `${m}:${String(sec).padStart(2, '0')}` : `0:${String(sec).padStart(2, '0')}`
+  }
 
   // --- Sample dataset — use the pre-loaded data stored in App (never overwritten by uploads) ---
   const handleSample = useCallback(() => {
@@ -63,7 +81,7 @@ export default function DataInputScreen({ sampleData, onBegin, onBack }) {
 
     const controller = new AbortController()
     abortRef.current = controller
-    const timeout = setTimeout(() => controller.abort(), 60 * 1000) // 60s
+    const timeout = setTimeout(() => controller.abort(), 310 * 1000) // 310s (server is 300s)
 
     try {
       const res = await fetch('/api/upload', {
@@ -185,8 +203,11 @@ export default function DataInputScreen({ sampleData, onBegin, onBack }) {
               <div style={{ fontFamily: PF, fontWeight: 700, fontSize: 20, color: 'var(--amber)', marginBottom: 10 }}>
                 {mode === 'sample_loading' ? 'Loading...' : 'Use Sample Dataset'}
               </div>
-              <div style={{ fontFamily: SF, fontSize: 13, color: 'var(--muted)', lineHeight: 1.7, marginBottom: 20 }}>
+              <div style={{ fontFamily: SF, fontSize: 13, color: 'var(--muted)', lineHeight: 1.7, marginBottom: 12 }}>
                 Load pre-analyzed CMS Medicare data with 200 providers, complete agent findings ready to explore.
+              </div>
+              <div style={{ fontFamily: MONO, fontSize: 10, color: 'var(--amber)', background: 'rgba(232,168,56,0.07)', border: '1px solid rgba(232,168,56,0.15)', borderRadius: 6, padding: '5px 10px', display: 'inline-block', marginBottom: 14, letterSpacing: '0.05em' }}>
+                ★ Recommended for demo — instant results
               </div>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 {['200 Providers', '5 Agents', 'Pre-computed', 'Instant'].map(tag => (
@@ -239,7 +260,7 @@ export default function DataInputScreen({ sampleData, onBegin, onBack }) {
                       Upload Claims Data
                     </div>
                     <div style={{ fontFamily: SF, fontSize: 13, color: 'var(--muted)', lineHeight: 1.7, marginBottom: 16 }}>
-                      Drag & drop CSV or Parquet files. Supports CMS Medicare Part B format, carrier claims, and DMERC files.
+                      Upload your own CSV claims data for analysis. Processing time: 3–5 minutes depending on file size. Agents run live on your data.
                     </div>
                     <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
                       {['.csv', '.parquet', 'CMS format'].map(tag => (
@@ -247,7 +268,7 @@ export default function DataInputScreen({ sampleData, onBegin, onBack }) {
                       ))}
                     </div>
                     <div style={{ fontFamily: MONO, fontSize: 10, color: 'var(--teal)', letterSpacing: '0.08em', opacity: 0.75 }}>
-                      Quick analysis: ~15 seconds
+                      Processing time: 3–5 minutes for real data
                     </div>
                   </div>
                   <div style={{ marginTop: 24, fontFamily: MONO, fontSize: 12, color: 'var(--dim)', letterSpacing: '0.08em', textAlign: 'center', padding: '14px', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 10 }}>
@@ -305,9 +326,13 @@ export default function DataInputScreen({ sampleData, onBegin, onBack }) {
                     })}
                   </div>
 
-                  <div style={{ fontFamily: SF, fontSize: 11, color: 'var(--dim)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 12, lineHeight: 1.6 }}>
+                  <div style={{ fontFamily: SF, fontSize: 11, color: 'var(--dim)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 12, lineHeight: 1.8 }}>
                     {currentMsg}<br />
-                    <span style={{ color: 'rgba(255,255,255,0.18)' }}>Analysis running — ~15 seconds</span>
+                    <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--teal)', letterSpacing: '0.06em' }}>
+                      Running for {fmtElapsed(elapsed)}...
+                    </span>
+                    <br />
+                    <span style={{ color: 'rgba(255,255,255,0.18)' }}>Processing live — typically 3–5 minutes</span>
                   </div>
                 </motion.div>
               )}

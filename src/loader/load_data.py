@@ -68,7 +68,9 @@ def detect_uploaded_files(upload_dir: str) -> dict | None:
         elif "ClaimID" in headers and "AdmissionDt" not in headers:
             found["outpatient"] = path
 
-    if all(k in found for k in ("labels", "beneficiary", "inpatient", "outpatient")):
+    # Labels file is optional — detection agents don't need ground-truth labels.
+    # Require only the 3 claims/beneficiary files to proceed.
+    if all(k in found for k in ("beneficiary", "inpatient", "outpatient")):
         return found
     return None
 
@@ -116,12 +118,13 @@ def _parse_date(val: str) -> str | None:
     v = (val or "").strip()
     if not v:
         return None
-    for fmt in ("%Y-%m-%d", "%m/%d/%Y"):
-        try:
-            return datetime.strptime(v, fmt).strftime("%Y-%m-%d")
-        except ValueError:
-            pass
-    return None
+    # Fast path: already YYYY-MM-DD (covers virtually all rows in this dataset)
+    if len(v) == 10 and v[4] == '-' and v[7] == '-':
+        return v
+    try:
+        return datetime.strptime(v, "%m/%d/%Y").strftime("%Y-%m-%d")
+    except ValueError:
+        return None
 
 
 def _parse_float(val: str) -> float | None:
@@ -186,6 +189,29 @@ def _load_providers(
     Returns (selected_provider_ids, provider_dicts).
     fraud_sample caps how many fraud providers are included (None = all).
     """
+    # If no labels file is available (e.g. Test dataset upload), derive providers
+    # directly from the claims files so detection still works — fraud_label=None.
+    has_labels = file_map is None or "labels" in file_map
+    if not has_labels:
+        print("[loader] No labels file — deriving providers from claims (fraud_label=None)")
+        provider_ids: set[str] = set()
+        for key in ("inpatient", "outpatient"):
+            try:
+                for row in _read_csv(key, file_map):
+                    pid = row.get("Provider", "").strip()
+                    if pid:
+                        provider_ids.add(pid)
+            except Exception:
+                pass
+        rng = random.Random(seed)
+        all_ids = sorted(provider_ids)
+        rng.shuffle(all_ids)
+        # Apply non_fraud_sample cap so large test datasets don't scan everything
+        capped = all_ids[:non_fraud_sample] if non_fraud_sample < len(all_ids) else all_ids
+        provider_dicts = [{"id": pid, "fraud_label": None} for pid in capped]
+        selected_ids = {p["id"] for p in provider_dicts}
+        return selected_ids, provider_dicts
+
     raw = _read_csv("labels", file_map)
     fraud_providers     = [r for r in raw if r["PotentialFraud"].strip() == "Yes"]
     non_fraud_providers = [r for r in raw if r["PotentialFraud"].strip() == "No"]
@@ -374,7 +400,7 @@ def _print_summary(dataset: dict) -> None:
     print(f"  Claims    : {len(dataset['claims']):>6,}")
     print(f"  Physicians: {len(dataset['physicians']):>6,}")
 
-    fraud_provs = [p for p in dataset["providers"] if p["fraud_label"]]
+    fraud_provs = [p for p in dataset["providers"] if p.get("fraud_label")]
     total_amount = sum(
         c["amount"] for c in dataset["claims"] if c["amount"] is not None
     )
