@@ -10,6 +10,10 @@ import OpenAI from 'openai'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
 
+// Ensure required directories exist (output/ and data/ are gitignored)
+fs.mkdirSync(path.join(ROOT, 'output'), { recursive: true })
+fs.mkdirSync(path.join(ROOT, 'data', 'uploads'), { recursive: true })
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' })
 
 const app = express()
